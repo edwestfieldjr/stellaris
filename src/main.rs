@@ -1,5 +1,6 @@
 mod flight;
 mod galaxy_map;
+mod mouse;
 mod state;
 
 use bevy::prelude::*;

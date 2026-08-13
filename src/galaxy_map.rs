@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 use std::collections::HashMap;
 
+use crate::mouse::cursor_world_pos;
 use crate::state::{AppState, Campaign};
 
 const GRID_SIZE: i32 = 6;
@@ -42,8 +43,10 @@ impl Default for GalaxyGrid {
 #[derive(Component)]
 struct GalaxyMapUi;
 
+/// One of four thin bars forming a highlight frame around the selected
+/// cell; `0` is its offset from the cell center.
 #[derive(Component)]
-struct Cursor;
+struct Cursor(Vec2);
 
 #[derive(Component)]
 struct FuelText;
@@ -57,7 +60,8 @@ impl Plugin for GalaxyMapPlugin {
             .add_systems(OnExit(AppState::GalaxyMap), teardown)
             .add_systems(
                 Update,
-                (move_cursor, warp_input, update_fuel_text).run_if(in_state(AppState::GalaxyMap)),
+                (move_cursor, mouse_hover, warp_input, update_fuel_text)
+                    .run_if(in_state(AppState::GalaxyMap)),
             );
     }
 }
@@ -89,17 +93,26 @@ fn setup(mut commands: Commands, grid: Res<GalaxyGrid>, campaign: Res<Campaign>)
         ));
     }
 
-    commands.spawn((
-        Sprite {
-            color: Color::srgba(1.0, 1.0, 1.0, 0.0),
-            custom_size: Some(Vec2::splat(CELL)),
-            ..default()
-        },
-        Outline,
-        Transform::from_translation(grid_to_world(campaign.sector.0, campaign.sector.1) + Vec3::Z),
-        Cursor,
-        GalaxyMapUi,
-    ));
+    let center = grid_to_world(campaign.sector.0, campaign.sector.1);
+    let half = CELL / 2.0;
+    let bars = [
+        (Vec2::new(CELL, 4.0), Vec2::new(0.0, half)),
+        (Vec2::new(CELL, 4.0), Vec2::new(0.0, -half)),
+        (Vec2::new(4.0, CELL), Vec2::new(-half, 0.0)),
+        (Vec2::new(4.0, CELL), Vec2::new(half, 0.0)),
+    ];
+    for (size, offset) in bars {
+        commands.spawn((
+            Sprite {
+                color: Color::srgb(1.0, 0.9, 0.2),
+                custom_size: Some(size),
+                ..default()
+            },
+            Transform::from_translation(center + offset.extend(1.0)),
+            Cursor(offset),
+            GalaxyMapUi,
+        ));
+    }
 
     commands.spawn((
         Text::new("Fuel: 100"),
@@ -119,7 +132,9 @@ fn setup(mut commands: Commands, grid: Res<GalaxyGrid>, campaign: Res<Campaign>)
     ));
 
     commands.spawn((
-        Text::new("Arrows: move    Enter: warp    (Zylon = red, Friendly = blue)"),
+        Text::new(
+            "Arrows/mouse: select    Enter/click: warp    (Zylon = red, Friendly = blue)",
+        ),
         TextFont {
             font_size: bevy::text::FontSize::Px(16.0),
             ..default()
@@ -135,21 +150,23 @@ fn setup(mut commands: Commands, grid: Res<GalaxyGrid>, campaign: Res<Campaign>)
     ));
 }
 
-// Marker so the cursor sprite is drawn as a hollow-ish ring via alpha; kept
-// simple for now (a filled translucent square) rather than a real outline.
-#[derive(Component)]
-struct Outline;
-
 fn teardown(mut commands: Commands, query: Query<Entity, With<GalaxyMapUi>>) {
     for entity in &query {
         commands.entity(entity).despawn();
     }
 }
 
+fn snap_cursor_visuals(sector: (i32, i32), cursor_query: &mut Query<(&Cursor, &mut Transform)>) {
+    let center = grid_to_world(sector.0, sector.1);
+    for (cursor, mut transform) in cursor_query.iter_mut() {
+        transform.translation = center + cursor.0.extend(1.0);
+    }
+}
+
 fn move_cursor(
     keys: Res<ButtonInput<KeyCode>>,
     mut campaign: ResMut<Campaign>,
-    mut cursor_query: Query<&mut Transform, With<Cursor>>,
+    mut cursor_query: Query<(&Cursor, &mut Transform)>,
 ) {
     let mut moved = false;
     if keys.just_pressed(KeyCode::ArrowLeft) && campaign.sector.0 > 0 {
@@ -170,20 +187,48 @@ fn move_cursor(
     }
 
     if moved {
-        if let Ok(mut transform) = cursor_query.single_mut() {
-            transform.translation =
-                grid_to_world(campaign.sector.0, campaign.sector.1) + Vec3::Z;
-        }
+        snap_cursor_visuals(campaign.sector, &mut cursor_query);
     }
+}
+
+/// Selects whichever cell the mouse is hovering, but only on frames the
+/// cursor actually moved, so it doesn't fight arrow-key input by
+/// re-asserting a stale position every frame.
+fn mouse_hover(
+    mut motion: MessageReader<CursorMoved>,
+    windows: Query<&Window>,
+    camera_q: Query<(&Camera, &GlobalTransform)>,
+    mut campaign: ResMut<Campaign>,
+    mut cursor_query: Query<(&Cursor, &mut Transform)>,
+) {
+    if motion.is_empty() {
+        return;
+    }
+    motion.clear();
+    let Some(world_pos) = cursor_world_pos(&windows, &camera_q) else {
+        return;
+    };
+    let origin = -(GRID_SIZE as f32 - 1.0) * CELL / 2.0;
+    let gx = ((world_pos.x - origin) / CELL).round() as i32;
+    let gy = ((world_pos.y - origin) / CELL).round() as i32;
+    if gx < 0 || gx >= GRID_SIZE || gy < 0 || gy >= GRID_SIZE {
+        return;
+    }
+    if campaign.sector == (gx, gy) {
+        return;
+    }
+    campaign.sector = (gx, gy);
+    snap_cursor_visuals(campaign.sector, &mut cursor_query);
 }
 
 fn warp_input(
     keys: Res<ButtonInput<KeyCode>>,
+    mouse: Res<ButtonInput<MouseButton>>,
     mut campaign: ResMut<Campaign>,
     mut grid: ResMut<GalaxyGrid>,
     mut next_state: ResMut<NextState<AppState>>,
 ) {
-    if !keys.just_pressed(KeyCode::Enter) {
+    if !keys.just_pressed(KeyCode::Enter) && !mouse.just_pressed(MouseButton::Left) {
         return;
     }
     let Some(kind) = grid.sectors.get(&campaign.sector).copied() else {
