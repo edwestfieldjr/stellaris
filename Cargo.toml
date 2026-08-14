@@ -4,5 +4,20 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-bevy = "0.19.0"
+bevy = { version = "0.19.0", features = ["webgl2"] }
 rand = "0.10.2"
+
+# rand/bevy pull in getrandom transitively; on wasm32 it needs an explicit
+# backend (browser crypto via wasm-bindgen), enabled here and selected via
+# .cargo/config.toml's rustflags.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.4", features = ["wasm_js"] }
+
+# LTO + stripped debug info substantially shrinks both the native binary
+# and (especially) the wasm one; opt-level stays at the default (3) so
+# native performance doesn't regress — the wasm build gets its further,
+# size-focused pass from `wasm-opt -Oz` as a separate post-build step.
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
