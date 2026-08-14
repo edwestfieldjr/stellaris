@@ -1,19 +1,25 @@
 mod flight;
 mod galaxy_map;
+mod game_over;
 mod mouse;
 mod state;
+mod title;
+mod warp;
 
 use bevy::prelude::*;
 
 use flight::FlightPlugin;
 use galaxy_map::GalaxyMapPlugin;
+use game_over::GameOverPlugin;
 use state::{AppState, Campaign};
+use title::TitlePlugin;
+use warp::WarpPlugin;
 
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
-                title: "Solaris".to_string(),
+                title: "Stellaris".to_string(),
                 resolution: bevy::window::WindowResolution::new(900, 650),
                 ..default()
             }),
@@ -21,7 +27,13 @@ fn main() {
         }))
         .init_state::<AppState>()
         .init_resource::<Campaign>()
-        .add_plugins((GalaxyMapPlugin, FlightPlugin))
+        .add_plugins((
+            TitlePlugin,
+            GalaxyMapPlugin,
+            WarpPlugin,
+            FlightPlugin,
+            GameOverPlugin,
+        ))
         .add_systems(Startup, spawn_camera)
         .run();
 }
