@@ -600,7 +600,7 @@ fn update_banner(
     };
     timer.tick(time.delta());
     if let Ok(mut text) = query.single_mut() {
-        **text = format!("LEVEL {} — the Zylon Empire regroups...", campaign.level);
+        **text = format!("LEVEL {} - the Zylon Empire regroups...", campaign.level);
     }
     if timer.is_finished() {
         banner.timer = None;

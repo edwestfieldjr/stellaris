@@ -59,10 +59,10 @@ fn setup(mut commands: Commands) {
 
     commands.spawn((
         Text::new(
-            "GALAXY MAP — Arrows/mouse: pick a sector   Enter/Space/click: warp in\n\
+            "GALAXY MAP - Arrows/mouse: pick a sector   Enter/Space/click: warp in\n\
              Red = Zylon (fight it)   Blue = Friendly (refuel)   decide fast, or one gets picked for you\n\
              \n\
-             FLIGHT — Arrows/mouse: aim   Space/click: fire\n\
+             FLIGHT - Arrows/mouse: aim   Space/click: fire\n\
              Dodge a charging enemy laser by moving your crosshair clear before it fires\n\
              \n\
              Fuel or health hits zero and the mission ends. Esc always backs out a screen.",
