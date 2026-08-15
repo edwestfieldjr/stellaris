@@ -6,7 +6,7 @@ pub enum AppState {
     #[default]
     Title,
     GalaxyMap,
-    /// Brief transition animation played on the way into a Zylon sector, so
+    /// Brief transition animation played on the way into a Zerlak sector, so
     /// the jump from map to combat reads as one continuous flight.
     Warp,
     Flight,
@@ -21,7 +21,7 @@ pub struct Campaign {
     pub health: f32,
     pub sector: (i32, i32),
     /// Increments each time a galaxy is fully cleared; drives difficulty
-    /// (grid size, Zylon density, enemy speed) of the next one.
+    /// (grid size, Zerlak density, enemy speed) of the next one.
     pub level: u32,
     /// Set when a run ends, so the GameOver screen can say why.
     pub defeat_reason: Option<DefeatReason>,

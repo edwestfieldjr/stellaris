@@ -702,7 +702,7 @@ fn setup(
 
     commands.spawn((
         Text::new(
-            "Zylon sector: destroy all fighters (Arrows/mouse: aim+dodge, Space/click: fire, Esc: retreat)",
+            "Zerlak sector: destroy all fighters (Arrows/mouse: aim+dodge, Space/click: fire, Esc: retreat)",
         ),
         TextFont {
             font_size: bevy::text::FontSize::Px(16.0),

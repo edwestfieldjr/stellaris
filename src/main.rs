@@ -19,13 +19,13 @@ fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
-                title: "Stellaris".to_string(),
+                title: "Zerlak Frontier".to_string(),
                 resolution: bevy::window::WindowResolution::new(900, 650),
                 // On web, target the canvas the host page provides and let
                 // it drive the resolution (the page keeps it letterboxed to
                 // this same 900x650-ish aspect ratio via CSS, so none of
                 // the game's hardcoded layout math needs to change).
-                canvas: Some("#stellaris-canvas".to_string()),
+                canvas: Some("#game-canvas".to_string()),
                 fit_canvas_to_parent: true,
                 prevent_default_event_handling: true,
                 ..default()

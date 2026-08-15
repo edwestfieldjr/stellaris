@@ -21,8 +21,8 @@ impl Plugin for GameOverPlugin {
 
 fn setup(mut commands: Commands, campaign: Res<Campaign>) {
     let reason = match campaign.defeat_reason {
-        Some(DefeatReason::OutOfFuel) => "Your ship drifted, out of fuel, deep in Zylon space.",
-        Some(DefeatReason::Destroyed) => "Your ship was destroyed by Zylon fire.",
+        Some(DefeatReason::OutOfFuel) => "Your ship drifted, out of fuel, deep in Zerlak space.",
+        Some(DefeatReason::Destroyed) => "Your ship was destroyed by Zerlak fire.",
         None => "Mission ended.",
     };
 

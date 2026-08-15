@@ -16,6 +16,9 @@ dist-ssr
 # `.github/workflows/deploy.yml` (or manually, see README.md).
 src/wasm/
 
+# Copied from the repo root's assets/ at build time (see README.md).
+public/assets/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

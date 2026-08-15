@@ -14,15 +14,15 @@ const MIN_CELL: f32 = 26.0;
 const MAX_CELL: f32 = 64.0;
 const SPREAD_INTERVAL: f32 = 6.0;
 const BANNER_SECONDS: f32 = 3.0;
-// If the player hasn't warped into a Zylon sector by the time this runs
-// out, the Zylon fleet doesn't wait — one gets picked and warped into
+// If the player hasn't warped into a Zerlak sector by the time this runs
+// out, the Zerlak fleet doesn't wait — one gets picked and warped into
 // automatically.
 const DECISION_SECONDS: f32 = 2.5;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum SectorKind {
     Empty,
-    Zylon,
+    Zerlak,
     Friendly,
     Cleared,
 }
@@ -38,19 +38,19 @@ pub struct GalaxyGrid {
 
 impl GalaxyGrid {
     /// Builds a fresh grid for the given campaign level: bigger and more
-    /// Zylon-heavy each time, capped so it never outgrows the window.
+    /// Zerlak-heavy each time, capped so it never outgrows the window.
     pub fn generate(level: u32) -> Self {
         let size = (5 + level as i32).min(10);
-        let zylon_chance = (0.26 + level as f32 * 0.025).min(0.5);
+        let zerlak_chance = (0.26 + level as f32 * 0.025).min(0.5);
         let friendly_chance = 0.16;
         let mut rng = rand::rng();
         let mut sectors = HashMap::new();
         for x in 0..size {
             for y in 0..size {
                 let roll = rng.random_range(0.0..1.0);
-                let kind = if roll < zylon_chance {
-                    SectorKind::Zylon
-                } else if roll < zylon_chance + friendly_chance {
+                let kind = if roll < zerlak_chance {
+                    SectorKind::Zerlak
+                } else if roll < zerlak_chance + friendly_chance {
                     SectorKind::Friendly
                 } else {
                     SectorKind::Empty
@@ -82,7 +82,7 @@ impl Default for GalaxyGrid {
 #[derive(Resource)]
 struct SpreadTimer(Timer);
 
-/// Counts down the player's window to warp into a Zylon sector; on expiry
+/// Counts down the player's window to warp into a Zerlak sector; on expiry
 /// `decision_countdown` picks one and warps in automatically.
 #[derive(Resource)]
 struct DecisionTimer(Timer);
@@ -135,7 +135,7 @@ impl Plugin for GalaxyMapPlugin {
                     touch_select,
                     decision_countdown,
                     check_level_complete,
-                    spread_zylons,
+                    spread_zerlaks,
                     quit_to_title,
                     update_fuel_text,
                     update_level_text,
@@ -151,7 +151,7 @@ impl Plugin for GalaxyMapPlugin {
 fn sector_color(kind: SectorKind) -> Color {
     match kind {
         SectorKind::Empty => Color::srgb(0.15, 0.15, 0.2),
-        SectorKind::Zylon => Color::srgb(0.7, 0.15, 0.15),
+        SectorKind::Zerlak => Color::srgb(0.7, 0.15, 0.15),
         SectorKind::Friendly => Color::srgb(0.15, 0.5, 0.7),
         SectorKind::Cleared => Color::srgb(0.2, 0.35, 0.2),
     }
@@ -243,7 +243,7 @@ fn setup(mut commands: Commands, grid: Res<GalaxyGrid>, campaign: Res<Campaign>)
 
     commands.spawn((
         Text::new(
-            "Arrows/mouse: select    Enter/Space/click: warp    Esc: quit to title    (Zylon = red, Friendly = blue)",
+            "Arrows/mouse: select    Enter/Space/click: warp    Esc: quit to title    (Zerlak = red, Friendly = blue)",
         ),
         TextFont {
             font_size: bevy::text::FontSize::Px(16.0),
@@ -390,7 +390,7 @@ fn mouse_hover(
 
 /// Applies the outcome of warping/selecting into `campaign.sector`: costs
 /// or refunds fuel depending on what's there, marks it cleared unless it's
-/// a Zylon fight, and checks for an out-of-fuel game over. Shared by
+/// a Zerlak fight, and checks for an out-of-fuel game over. Shared by
 /// keyboard/mouse warp, touch selection, and the auto-pick countdown.
 fn resolve_sector_choice(
     campaign: &mut Campaign,
@@ -401,7 +401,7 @@ fn resolve_sector_choice(
         return;
     };
     match kind {
-        SectorKind::Zylon => {
+        SectorKind::Zerlak => {
             campaign.fuel -= 5.0;
             next_state.set(AppState::Warp);
         }
@@ -462,8 +462,8 @@ fn touch_select(
     resolve_sector_choice(&mut campaign, &mut grid, &mut next_state);
 }
 
-/// If the player hasn't warped into a Zylon sector before the countdown
-/// runs out, the fleet doesn't wait: a random Zylon sector is selected and
+/// If the player hasn't warped into a Zerlak sector before the countdown
+/// runs out, the fleet doesn't wait: a random Zerlak sector is selected and
 /// warped into automatically, same as a manual pick.
 fn decision_countdown(
     time: Res<Time>,
@@ -476,22 +476,22 @@ fn decision_countdown(
     if !timer.0.tick(time.delta()).just_finished() {
         return;
     }
-    let zylon_cells: Vec<(i32, i32)> = grid
+    let zerlak_cells: Vec<(i32, i32)> = grid
         .sectors
         .iter()
-        .filter(|(_, k)| **k == SectorKind::Zylon)
+        .filter(|(_, k)| **k == SectorKind::Zerlak)
         .map(|(&pos, _)| pos)
         .collect();
-    if zylon_cells.is_empty() {
+    if zerlak_cells.is_empty() {
         return;
     }
     let mut rng = rand::rng();
-    campaign.sector = zylon_cells[rng.random_range(0..zylon_cells.len())];
+    campaign.sector = zerlak_cells[rng.random_range(0..zerlak_cells.len())];
     snap_cursor_visuals(&grid, campaign.sector, &mut cursor_query);
     resolve_sector_choice(&mut campaign, &mut grid, &mut next_state);
 }
 
-/// Once every Zylon sector in the current grid is gone, regenerate a
+/// Once every Zerlak sector in the current grid is gone, regenerate a
 /// bigger, denser galaxy for the next level rather than just... stopping.
 fn check_level_complete(
     mut commands: Commands,
@@ -503,7 +503,7 @@ fn check_level_complete(
     if !grid.is_changed() {
         return;
     }
-    if grid.sectors.values().any(|k| *k == SectorKind::Zylon) {
+    if grid.sectors.values().any(|k| *k == SectorKind::Zerlak) {
         return;
     }
     campaign.level += 1;
@@ -518,7 +518,7 @@ fn check_level_complete(
     spawn_grid_visuals(&mut commands, &grid, &campaign);
 }
 
-fn spread_zylons(
+fn spread_zerlaks(
     time: Res<Time>,
     mut timer: ResMut<SpreadTimer>,
     mut grid: ResMut<GalaxyGrid>,
@@ -526,17 +526,17 @@ fn spread_zylons(
     if !timer.0.tick(time.delta()).just_finished() {
         return;
     }
-    let zylon_cells: Vec<(i32, i32)> = grid
+    let zerlak_cells: Vec<(i32, i32)> = grid
         .sectors
         .iter()
-        .filter(|(_, k)| **k == SectorKind::Zylon)
+        .filter(|(_, k)| **k == SectorKind::Zerlak)
         .map(|(&pos, _)| pos)
         .collect();
-    if zylon_cells.is_empty() {
+    if zerlak_cells.is_empty() {
         return;
     }
     let mut rng = rand::rng();
-    let origin = zylon_cells[rng.random_range(0..zylon_cells.len())];
+    let origin = zerlak_cells[rng.random_range(0..zerlak_cells.len())];
     let neighbors = [
         (origin.0 - 1, origin.1),
         (origin.0 + 1, origin.1),
@@ -549,7 +549,7 @@ fn spread_zylons(
         .collect();
     if !candidates.is_empty() {
         let target = candidates[rng.random_range(0..candidates.len())];
-        grid.sectors.insert(target, SectorKind::Zylon);
+        grid.sectors.insert(target, SectorKind::Zerlak);
     }
 }
 
@@ -585,7 +585,7 @@ fn update_countdown_text(
 ) {
     let remaining = timer.0.remaining_secs().max(0.0);
     if let Ok(mut text) = query.single_mut() {
-        **text = format!("Zylon lock in {remaining:.2}s");
+        **text = format!("Zerlak lock in {remaining:.2}s");
     }
 }
 
@@ -600,7 +600,7 @@ fn update_banner(
     };
     timer.tick(time.delta());
     if let Ok(mut text) = query.single_mut() {
-        **text = format!("LEVEL {} - the Zylon Empire regroups...", campaign.level);
+        **text = format!("LEVEL {} - the Zerlak Empire regroups...", campaign.level);
     }
     if timer.is_finished() {
         banner.timer = None;

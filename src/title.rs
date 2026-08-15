@@ -20,11 +20,14 @@ impl Plugin for TitlePlugin {
     }
 }
 
-fn setup(mut commands: Commands) {
+fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
+    let title_font: Handle<Font> = asset_server.load("fonts/Audiowide-Regular.ttf");
+
     commands.spawn((
-        Text::new("STELLARIS"),
+        Text::new("ZERLAK FRONTIER"),
         TextFont {
-            font_size: bevy::text::FontSize::Px(64.0),
+            font: bevy::text::FontSource::Handle(title_font),
+            font_size: bevy::text::FontSize::Px(44.0),
             ..default()
         },
         TextColor(Color::srgb(0.45, 0.8, 1.0)),
@@ -40,7 +43,7 @@ fn setup(mut commands: Commands) {
     ));
 
     commands.spawn((
-        Text::new("A Zylon incursion threatens the frontier."),
+        Text::new("A Zerlak incursion threatens the frontier."),
         TextFont {
             font_size: bevy::text::FontSize::Px(18.0),
             ..default()
@@ -60,7 +63,7 @@ fn setup(mut commands: Commands) {
     commands.spawn((
         Text::new(
             "GALAXY MAP - Arrows/mouse: pick a sector   Enter/Space/click: warp in\n\
-             Red = Zylon (fight it)   Blue = Friendly (refuel)   decide fast, or one gets picked for you\n\
+             Red = Zerlak (fight it)   Blue = Friendly (refuel)   decide fast, or one gets picked for you\n\
              \n\
              FLIGHT - Arrows/mouse: aim   Space/click: fire\n\
              Dodge a charging enemy laser by moving your crosshair clear before it fires\n\

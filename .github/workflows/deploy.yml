@@ -54,6 +54,14 @@ jobs:
         working-directory: web
         run: npm ci
 
+      # Bevy's wasm AssetServer fetches game assets (fonts, etc.) relative
+      # to the page at the same "assets/..." paths it uses natively, so the
+      # front end needs its own copy under public/.
+      - name: Copy game assets for the web build
+        run: |
+          mkdir -p web/public/assets
+          cp -r assets/. web/public/assets/
+
       - name: Shrink the wasm binary
         working-directory: web
         run: |
@@ -65,7 +73,7 @@ jobs:
       # its own base path. Update this if the repo is ever renamed.
       - name: Build the front end
         working-directory: web
-        run: npm run build -- --base=/stellaris/
+        run: npm run build -- --base=/zerlak-frontier/
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3

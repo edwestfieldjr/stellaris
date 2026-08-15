@@ -1,24 +1,24 @@
-# Stellaris
+# Zerlak Frontier
 
 A galaxy-map strategy layer and first-person space-combat sector, built in Rust
 with [Bevy](https://bevyengine.org/). Pick a sector on the galaxy map, warp in,
-and fight off the Zylon fleet before your fuel or your hull gives out.
+and fight off the Zerlak fleet before your fuel or your hull gives out.
 
-**Play it in the browser:** <https://westfield.dev/stellaris/>
+**Play it in the browser:** <https://westfield.dev/zerlak-frontier/>
 
 ## About / attribution
 
-Stellaris is an unofficial, non-commercial fan tribute inspired by **Solaris**,
+Zerlak Frontier is an unofficial, non-commercial fan tribute inspired by **Solaris**,
 the 1986 Atari 2600 game by Douglas Neubauer, published by Atari Corporation.
 It borrows the broad two-layer shape of that game (a galaxy map you navigate
 sector by sector, and a first-person combat view when you engage the enemy)
-and its "Zylon" antagonists as an homage — it is an original implementation,
+and its "Zerlak" antagonists as an homage — it is an original implementation,
 not a port, clone, or asset reuse, and shares no code or art with the
 original.
 
 This project is **not affiliated with, endorsed by, or sponsored by Atari**.
 "Solaris," "Atari," and all related names, characters, and trademarks are the
-property of their respective owners. Stellaris is offered free of charge for
+property of their respective owners. Zerlak Frontier is offered free of charge for
 personal, educational, and non-commercial use only — see [License](#license).
 
 ## How to play
@@ -27,10 +27,10 @@ personal, educational, and non-commercial use only — see [License](#license).
 
 - **Arrows / mouse / tap:** pick a sector
 - **Enter / Space / click / tap:** warp into the selected sector
-- Red sectors are Zylon-held — warping in starts a combat sector. Blue
+- Red sectors are Zerlak-held — warping in starts a combat sector. Blue
   sectors are friendly outposts that refuel you. Decide fast: if you sit on
-  a non-Zylon choice too long, the countdown in the corner runs out and a
-  Zylon sector gets picked (and warped into) for you.
+  a non-Zerlak choice too long, the countdown in the corner runs out and a
+  Zerlak sector gets picked (and warped into) for you.
 - **Esc:** quit to the title screen
 
 ### Flight (combat)
@@ -42,7 +42,7 @@ personal, educational, and non-commercial use only — see [License](#license).
   clear it.
 - **Esc:** retreat to the galaxy map
 
-Running out of fuel or hull health ends the run. Clearing every Zylon sector
+Running out of fuel or hull health ends the run. Clearing every Zerlak sector
 regenerates a bigger, tougher galaxy for the next level — there's no fixed
 ending, just an escalating campaign.
 
@@ -71,6 +71,7 @@ wasm-bindgen --target web --out-dir web/src/wasm --out-name solaris \
   target/wasm32-unknown-unknown/release/solaris.wasm
 
 # 2. Build the front end
+mkdir -p web/public/assets && cp -r assets/. web/public/assets/
 cd web
 npm install
 npx wasm-opt -Oz --enable-bulk-memory --enable-nontrapping-float-to-int \
@@ -93,6 +94,10 @@ Source code is licensed under the **[PolyForm Noncommercial License
 purpose, with attribution. See the [`LICENSE`](LICENSE) file for the full
 text. This keeps the project's terms consistent with the non-commercial,
 fan-tribute spirit described in [Attribution](#about--attribution) above.
+
+The title screen uses [Audiowide](https://fonts.google.com/specimen/Audiowide)
+by Brian J. Bonislawsky, licensed under the [SIL Open Font License
+1.1](assets/fonts/OFL.txt).
 
 ---
 

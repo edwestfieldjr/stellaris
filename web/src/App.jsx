@@ -15,7 +15,7 @@ export default function App() {
       .then((mod) => mod.default())
       .then(() => setStatus('ready'))
       .catch((err) => {
-        console.error('Failed to start Stellaris:', err)
+        console.error('Failed to start Zerlak Frontier:', err)
         setStatus('error')
       })
   }, [])
@@ -23,11 +23,11 @@ export default function App() {
   return (
     <div className="stage">
       <div className="viewport">
-        <canvas id="stellaris-canvas" />
+        <canvas id="game-canvas" />
         {status !== 'ready' && (
           <div className="overlay">
             {status === 'loading'
-              ? 'Loading Stellaris…'
+              ? 'Loading Zerlak Frontier…'
               : 'Failed to load. Please reload the page.'}
           </div>
         )}
