@@ -21,22 +21,42 @@
   aspect-ratio: 900 / 650;
   background: #0d0f14;
   box-shadow: 0 0 60px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
 }
 
-.viewport canvas {
-  /* !important: winit sets its own inline width/height/position style on
-     the canvas (matching the game's internal 900x650 resolution in raw
-     CSS pixels), which otherwise beats this stylesheet rule on
-     specificity alone. Without overriding it, the canvas renders at a
-     literal 900x650 CSS-pixel box regardless of screen size — on a phone
-     that's several times the viewport, so only its top-left corner is
-     ever visible. Forcing our own sizing here is what actually makes the
-     letterboxing in .viewport take effect.
-     https://github.com/rust-windowing/winit's web backend sets these. */
-  width: 100% !important;
-  height: 100% !important;
+/* Always exactly the game's native 900x650 resolution, in real CSS pixels,
+   and NEVER resized in response to the screen — App.jsx scales this down to
+   fit `.viewport` with a `transform`, not by changing its box size.
+   That distinction matters: winit's web backend installs a `ResizeObserver`
+   on the canvas (unrelated to Bevy's `fit_canvas_to_parent` flag, which we
+   don't use), and bevy_winit's resize handling unconditionally shrinks the
+   game's internal `Window.resolution` to match whatever size the canvas
+   actually renders at. Force the canvas smaller with plain width/height CSS
+   (even `!important`) and that observer fires, Bevy's internal 900x650
+   layout resolution shrinks to match the phone-sized canvas, and every
+   hardcoded pixel position (HUD, crosshair range, galaxy grid) ends up laid
+   out for a viewport many times smaller than intended — only its top-left
+   corner ever visible. A `transform` is applied after layout and never
+   touches the element's box size, so it's invisible to that observer: the
+   canvas is always, as far as winit is concerned, sitting at a boring fixed
+   900x650, and we just visually shrink the whole thing to fit afterward. */
+.canvas-wrap {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 900px;
+  height: 650px;
+  transform-origin: top left;
+}
+
+.canvas-wrap canvas {
+  /* winit also pins the canvas with `position: fixed` and explicit
+     left/top offsets (placing it relative to the browser viewport, not our
+     wrapper) — pull it back into normal flow inside `.canvas-wrap` instead.
+     Deliberately not touching width/height here; see the comment above. */
   position: absolute !important;
-  inset: 0 !important;
+  left: 0 !important;
+  top: 0 !important;
   display: block;
   /* Let the game handle taps/drags itself instead of the browser trying
      to scroll, zoom, or otherwise gesture-navigate the page. */
