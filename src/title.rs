@@ -2,6 +2,7 @@ use bevy::input::touch::Touches;
 use bevy::prelude::*;
 
 use crate::galaxy_map::GalaxyGrid;
+use crate::hud::credits_closed;
 use crate::state::{AppState, Campaign};
 
 #[derive(Component)]
@@ -15,7 +16,8 @@ impl Plugin for TitlePlugin {
             .add_systems(OnExit(AppState::Title), teardown)
             .add_systems(
                 Update,
-                (start_input, quit_input).run_if(in_state(AppState::Title)),
+                (start_input, quit_input)
+                    .run_if(in_state(AppState::Title).and_then(credits_closed)),
             );
     }
 }

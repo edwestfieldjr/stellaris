@@ -1,6 +1,7 @@
 use bevy::input::touch::Touches;
 use bevy::prelude::*;
 
+use crate::hud::credits_closed;
 use crate::state::{AppState, Campaign, DefeatReason};
 
 #[derive(Component)]
@@ -14,7 +15,7 @@ impl Plugin for GameOverPlugin {
             .add_systems(OnExit(AppState::GameOver), teardown)
             .add_systems(
                 Update,
-                continue_input.run_if(in_state(AppState::GameOver)),
+                continue_input.run_if(in_state(AppState::GameOver).and_then(credits_closed)),
             );
     }
 }

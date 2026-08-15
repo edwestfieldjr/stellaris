@@ -3,8 +3,9 @@ use bevy::prelude::*;
 use rand::RngExt as _;
 use std::collections::HashMap;
 
+use crate::hud::credits_closed;
 use crate::mouse::{cursor_world_pos, screen_to_world_pos};
-use crate::state::{AppState, Campaign};
+use crate::state::{AppState, Campaign, WarpTarget};
 
 /// The galaxy grid always renders inside roughly this many pixels square,
 /// regardless of how big `size` gets, so later (bigger) levels still fit
@@ -143,7 +144,7 @@ impl Plugin for GalaxyMapPlugin {
                     update_countdown_text,
                 )
                     .chain()
-                    .run_if(in_state(AppState::GalaxyMap)),
+                    .run_if(in_state(AppState::GalaxyMap).and_then(credits_closed)),
             );
     }
 }
@@ -396,6 +397,7 @@ fn resolve_sector_choice(
     campaign: &mut Campaign,
     grid: &mut GalaxyGrid,
     next_state: &mut NextState<AppState>,
+    warp_target: &mut WarpTarget,
 ) {
     let Some(kind) = grid.sectors.get(&campaign.sector).copied() else {
         return;
@@ -403,6 +405,7 @@ fn resolve_sector_choice(
     match kind {
         SectorKind::Zerlak => {
             campaign.fuel -= 5.0;
+            *warp_target = WarpTarget(AppState::Flight);
             next_state.set(AppState::Warp);
         }
         SectorKind::Friendly => {
@@ -428,6 +431,7 @@ fn warp_input(
     mut campaign: ResMut<Campaign>,
     mut grid: ResMut<GalaxyGrid>,
     mut next_state: ResMut<NextState<AppState>>,
+    mut warp_target: ResMut<WarpTarget>,
 ) {
     if !keys.just_pressed(KeyCode::Enter)
         && !keys.just_pressed(KeyCode::Space)
@@ -435,7 +439,7 @@ fn warp_input(
     {
         return;
     }
-    resolve_sector_choice(&mut campaign, &mut grid, &mut next_state);
+    resolve_sector_choice(&mut campaign, &mut grid, &mut next_state, &mut warp_target);
 }
 
 /// A tap both picks the tapped cell and immediately commits to it — touch
@@ -446,6 +450,7 @@ fn touch_select(
     mut campaign: ResMut<Campaign>,
     mut grid: ResMut<GalaxyGrid>,
     mut next_state: ResMut<NextState<AppState>>,
+    mut warp_target: ResMut<WarpTarget>,
     mut cursor_query: Query<(&Cursor, &mut Transform)>,
 ) {
     let Some(touch) = touches.iter_just_pressed().next() else {
@@ -459,7 +464,7 @@ fn touch_select(
     };
     campaign.sector = cell;
     snap_cursor_visuals(&grid, campaign.sector, &mut cursor_query);
-    resolve_sector_choice(&mut campaign, &mut grid, &mut next_state);
+    resolve_sector_choice(&mut campaign, &mut grid, &mut next_state, &mut warp_target);
 }
 
 /// If the player hasn't warped into a Zerlak sector before the countdown
@@ -471,6 +476,7 @@ fn decision_countdown(
     mut grid: ResMut<GalaxyGrid>,
     mut campaign: ResMut<Campaign>,
     mut next_state: ResMut<NextState<AppState>>,
+    mut warp_target: ResMut<WarpTarget>,
     mut cursor_query: Query<(&Cursor, &mut Transform)>,
 ) {
     if !timer.0.tick(time.delta()).just_finished() {
@@ -488,7 +494,7 @@ fn decision_countdown(
     let mut rng = rand::rng();
     campaign.sector = zerlak_cells[rng.random_range(0..zerlak_cells.len())];
     snap_cursor_visuals(&grid, campaign.sector, &mut cursor_query);
-    resolve_sector_choice(&mut campaign, &mut grid, &mut next_state);
+    resolve_sector_choice(&mut campaign, &mut grid, &mut next_state, &mut warp_target);
 }
 
 /// Once every Zerlak sector in the current grid is gone, regenerate a

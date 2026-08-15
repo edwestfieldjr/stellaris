@@ -1,4 +1,5 @@
 use bevy::asset::RenderAssetUsages;
+use bevy::audio::{AudioPlayer, AudioSource, PlaybackSettings};
 use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::prelude::*;
 use bevy::sprite_render::{ColorMaterial, MeshMaterial2d};
@@ -6,10 +7,11 @@ use rand::RngExt as _;
 use std::f32::consts::TAU;
 
 use crate::galaxy_map::{GalaxyGrid, SectorKind};
+use crate::hud::credits_closed;
 use bevy::input::touch::Touches;
 
 use crate::mouse::{cursor_world_pos, screen_to_world_pos};
-use crate::state::{AppState, Campaign, DefeatReason};
+use crate::state::{AppState, Campaign, DefeatReason, WarpTarget};
 
 // Depth runs from FAR_DEPTH (a speck near the vanishing point) down to 0.0
 // (right in front of the canopy). Screen position and sprite size are both
@@ -122,7 +124,7 @@ const ENEMY_MIN_BRIGHTNESS: f32 = 0.15;
 // the vanishing point, same as real distance haze. Built from concentric
 // non-overlapping rings rather than a single blended shape, so there's no
 // alpha-compounding surprises where they meet.
-const VIGNETTE_RINGS: usize = 12;
+const VIGNETTE_RINGS: usize = 48;
 const VIGNETTE_MAX_RADIUS: f32 = 700.0;
 const VIGNETTE_CENTER_ALPHA: f32 = 0.5;
 
@@ -354,6 +356,16 @@ impl EnemyShapes {
     }
 }
 
+/// One-shot sound effect handles, loaded once on entering the sector and
+/// reused for every player shot, enemy shot, kill, and hit.
+#[derive(Resource)]
+struct SfxHandles {
+    laser: Handle<AudioSource>,
+    enemy_laser: Handle<AudioSource>,
+    explosion: Handle<AudioSource>,
+    impact: Handle<AudioSource>,
+}
+
 /// Facial/body-horror trim spawned as children on every enemy so silhouettes
 /// read as living monsters rather than bare geometric shapes: angry glowing
 /// eyes with angled brows, a pair of fangs, and a fan of curling tentacles.
@@ -512,7 +524,7 @@ impl Plugin for FlightPlugin {
                     update_health_text,
                 )
                     .chain()
-                    .run_if(in_state(AppState::Flight)),
+                    .run_if(in_state(AppState::Flight).and_then(credits_closed)),
             );
     }
 }
@@ -521,8 +533,16 @@ fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
+    asset_server: Res<AssetServer>,
     campaign: Res<Campaign>,
 ) {
+    commands.insert_resource(SfxHandles {
+        laser: asset_server.load("sounds/laser.wav"),
+        enemy_laser: asset_server.load("sounds/enemy_laser.wav"),
+        explosion: asset_server.load("sounds/explosion.wav"),
+        impact: asset_server.load("sounds/impact.wav"),
+    });
+
     let difficulty = Difficulty::for_level(campaign.level);
     commands.insert_resource(difficulty);
     commands.insert_resource(EnemiesRemaining(difficulty.enemy_count));
@@ -763,6 +783,7 @@ fn teardown(mut commands: Commands, query: Query<Entity, With<FlightUi>>) {
     commands.remove_resource::<EnemyShapes>();
     commands.remove_resource::<MonsterFeatures>();
     commands.remove_resource::<Difficulty>();
+    commands.remove_resource::<SfxHandles>();
 }
 
 fn spawn_enemies(
@@ -1078,6 +1099,7 @@ fn enemy_fire(
     mut commands: Commands,
     time: Res<Time>,
     crosshair: Res<CrosshairPos>,
+    sfx: Res<SfxHandles>,
     mut enemies: Query<(Entity, &mut Approach), With<Enemy>>,
 ) {
     let mut rng = rand::rng();
@@ -1093,6 +1115,7 @@ fn enemy_fire(
         if t < ENEMY_FIRE_MIN_T {
             continue;
         }
+        commands.spawn((AudioPlayer(sfx.enemy_laser.clone()), PlaybackSettings::DESPAWN));
         commands.spawn((
             Sprite {
                 color: Color::srgba(1.0, 0.25, 0.2, 0.0),
@@ -1121,6 +1144,7 @@ fn move_enemy_lasers(
     mut next_state: ResMut<NextState<AppState>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
     shooters: Query<&MeshMaterial2d<ColorMaterial>, With<Enemy>>,
+    sfx: Res<SfxHandles>,
     mut query: Query<(Entity, &mut Sprite, &mut EnemyLaser)>,
 ) {
     for (entity, mut sprite, mut laser) in &mut query {
@@ -1134,6 +1158,7 @@ fn move_enemy_lasers(
             let dodged = crosshair.0.distance(laser.target) > LASER_DODGE_MARGIN;
             if !dodged {
                 campaign.health = (campaign.health - LASER_DAMAGE).max(0.0);
+                commands.spawn((AudioPlayer(sfx.impact.clone()), PlaybackSettings::DESPAWN));
                 commands.spawn((
                     Sprite {
                         color: Color::srgb(1.0, 0.3, 0.2),
@@ -1214,6 +1239,8 @@ fn shoot(
     mut grid: ResMut<GalaxyGrid>,
     campaign: Res<Campaign>,
     mut next_state: ResMut<NextState<AppState>>,
+    mut warp_target: ResMut<WarpTarget>,
+    sfx: Res<SfxHandles>,
 ) {
     // Space/click fire on their own press edge, independent of arrow-key
     // or mouse-motion aiming (those read `pressed`/`CursorMoved` in their
@@ -1226,6 +1253,7 @@ fn shoot(
     {
         return;
     }
+    commands.spawn((AudioPlayer(sfx.laser.clone()), PlaybackSettings::DESPAWN));
 
     let mut best: Option<(Entity, f32, Vec2)> = None;
     for (entity, transform) in &enemies {
@@ -1242,6 +1270,7 @@ fn shoot(
         if remaining.0 > 0 {
             remaining.0 -= 1;
         }
+        commands.spawn((AudioPlayer(sfx.explosion.clone()), PlaybackSettings::DESPAWN));
         commands.spawn((
             Sprite {
                 color: Color::srgb(1.0, 0.9, 0.3),
@@ -1297,7 +1326,8 @@ fn shoot(
 
     if remaining.0 == 0 {
         grid.sectors.insert(campaign.sector, SectorKind::Cleared);
-        next_state.set(AppState::GalaxyMap);
+        *warp_target = WarpTarget(AppState::GalaxyMap);
+        next_state.set(AppState::Warp);
     }
 }
 

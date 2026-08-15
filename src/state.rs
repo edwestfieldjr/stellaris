@@ -13,6 +13,19 @@ pub enum AppState {
     GameOver,
 }
 
+/// Where `Warp` should send the player once its transition animation
+/// finishes — set by whoever triggers the warp (galaxy map warping into a
+/// Zerlak sector sets `Flight`; clearing a sector sets `GalaxyMap`), since
+/// `Warp` is shared by both directions of the trip.
+#[derive(Resource, Clone, Copy)]
+pub struct WarpTarget(pub AppState);
+
+impl Default for WarpTarget {
+    fn default() -> Self {
+        Self(AppState::Flight)
+    }
+}
+
 /// Persistent player/campaign data that survives transitions between
 /// states, and across a full run (Title resets it).
 #[derive(Resource)]
