@@ -41,8 +41,17 @@ export default function App() {
     if (!viewport || !canvasWrap) return
 
     const applyScale = () => {
-      const scale = viewport.clientWidth / GAME_WIDTH
-      canvasWrap.style.transform = `scale(${scale})`
+      // min() of both axes, not just width: `.viewport`'s CSS enforces the
+      // 900:650 aspect ratio, but subpixel rounding can still leave one
+      // axis a hair smaller than the other, and width-only would then
+      // overflow that axis instead of staying safely inside it.
+      const scale = Math.min(
+        viewport.clientWidth / GAME_WIDTH,
+        viewport.clientHeight / GAME_HEIGHT,
+      )
+      if (scale > 0) {
+        canvasWrap.style.transform = `scale(${scale})`
+      }
     }
 
     applyScale()

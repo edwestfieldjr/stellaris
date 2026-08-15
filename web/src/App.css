@@ -24,6 +24,17 @@
   overflow: hidden;
 }
 
+/* Belt-and-suspenders for browsers that don't understand dvh/dvw: an @supports
+   block (unlike a plain duplicate declaration) survives the production CSS
+   minifier, which otherwise treats two declarations of the same property as
+   dead-code-eliminates the earlier one outright, regardless of unit support. */
+@supports not (height: 100dvh) {
+  .viewport {
+    width: min(100%, calc(100vh * 900 / 650));
+    height: min(100%, calc(100vw * 650 / 900));
+  }
+}
+
 /* Always exactly the game's native 900x650 resolution, in real CSS pixels,
    and NEVER resized in response to the screen — App.jsx scales this down to
    fit `.viewport` with a `transform`, not by changing its box size.

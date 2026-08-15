@@ -19,7 +19,20 @@ use warp::WarpPlugin;
 
 fn main() {
     App::new()
-        .add_plugins(DefaultPlugins.set(WindowPlugin {
+        .add_plugins(DefaultPlugins.set(AssetPlugin {
+            // Bevy's asset server normally probes for a `<file>.meta`
+            // sidecar next to every asset (per-asset loader settings). On
+            // the web build there's no such file for anything we ship, and
+            // static hosts like GitHub Pages (and the local dev/preview
+            // server) don't return a real 404 for it — they fall back to
+            // serving `index.html` with a 200. Bevy then tries to parse
+            // that HTML as the meta file's RON format, fails, and the
+            // asset load itself never completes (silently: no sound, no
+            // font). Telling it to never check for meta files at all
+            // avoids the request entirely.
+            meta_check: bevy::asset::AssetMetaCheck::Never,
+            ..default()
+        }).set(WindowPlugin {
             primary_window: Some(Window {
                 title: "Zerlak Frontier".to_string(),
                 resolution: bevy::window::WindowResolution::new(900, 650),
