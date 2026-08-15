@@ -477,6 +477,22 @@ struct EnemiesRemaining(u32);
 #[derive(Resource, Default)]
 struct CrosshairPos(Vec2);
 
+/// Eased trailing copy of `CrosshairPos`, used only to offset the
+/// background star layers (`move_far_stars`/`move_deep_stars`). A touch tap
+/// snaps `CrosshairPos` straight to the tap point — great for aiming, but
+/// fed directly into the parallax offset it read as a jump-cut in the
+/// starfield the instant a finger landed. Chasing the raw crosshair with
+/// this smoothed value instead keeps the parallax drifting continuously no
+/// matter how abruptly the aim point itself moves.
+#[derive(Resource, Default)]
+struct ParallaxPos(Vec2);
+
+/// How fast `ParallaxPos` closes the gap to `CrosshairPos`, in "fraction of
+/// the remaining distance per second" (exponential smoothing). Higher is
+/// snappier; this is tuned to still read as an instant response to mouse/key
+/// aiming while smoothing out a touch tap's sudden jump.
+const PARALLAX_SMOOTHING: f32 = 6.0;
+
 #[derive(Resource)]
 struct SpawnTimer(Timer);
 
@@ -509,6 +525,7 @@ impl Plugin for FlightPlugin {
                     move_crosshair,
                     mouse_aim,
                     touch_aim,
+                    update_parallax,
                     move_far_stars,
                     move_stars,
                     move_deep_stars,
@@ -547,6 +564,7 @@ fn setup(
     commands.insert_resource(difficulty);
     commands.insert_resource(EnemiesRemaining(difficulty.enemy_count));
     commands.insert_resource(CrosshairPos::default());
+    commands.insert_resource(ParallaxPos::default());
     commands.insert_resource(SpawnTimer(Timer::from_seconds(
         SPAWN_INTERVAL,
         TimerMode::Repeating,
@@ -779,6 +797,7 @@ fn teardown(mut commands: Commands, query: Query<Entity, With<FlightUi>>) {
     }
     commands.remove_resource::<EnemiesRemaining>();
     commands.remove_resource::<CrosshairPos>();
+    commands.remove_resource::<ParallaxPos>();
     commands.remove_resource::<SpawnTimer>();
     commands.remove_resource::<EnemyShapes>();
     commands.remove_resource::<MonsterFeatures>();
@@ -978,11 +997,19 @@ fn touch_aim(
     }
 }
 
+/// Eases `ParallaxPos` toward `CrosshairPos` every frame so the background
+/// star layers never see an instant jump in aim point, even when the aim
+/// point itself does (a touch tap, most notably).
+fn update_parallax(time: Res<Time>, crosshair: Res<CrosshairPos>, mut parallax: ResMut<ParallaxPos>) {
+    let t = (PARALLAX_SMOOTHING * time.delta_secs()).min(1.0);
+    parallax.0 = parallax.0.lerp(crosshair.0, t);
+}
+
 /// Nudges the far backdrop opposite your aim, like `move_deep_stars` but at
 /// a fraction of the strength — the most distant layer should barely seem
 /// to move.
-fn move_far_stars(crosshair: Res<CrosshairPos>, mut query: Query<(&mut Transform, &FarStar)>) {
-    let offset = -crosshair.0 * FAR_PARALLAX;
+fn move_far_stars(parallax: Res<ParallaxPos>, mut query: Query<(&mut Transform, &FarStar)>) {
+    let offset = -parallax.0 * FAR_PARALLAX;
     for (mut transform, star) in &mut query {
         transform.translation.x = star.base_pos.x + offset.x;
         transform.translation.y = star.base_pos.y + offset.y;
@@ -1013,11 +1040,11 @@ fn move_stars(time: Res<Time>, mut query: Query<(&mut Transform, &mut Sprite, &m
 /// scenery appears to slide left, the classic background-parallax cue.
 fn move_deep_stars(
     time: Res<Time>,
-    crosshair: Res<CrosshairPos>,
+    parallax: Res<ParallaxPos>,
     mut query: Query<(&mut Transform, &mut Sprite, &mut DeepStar)>,
 ) {
     let mut rng = rand::rng();
-    let offset = -crosshair.0 * DEEP_PARALLAX;
+    let offset = -parallax.0 * DEEP_PARALLAX;
     for (mut transform, mut sprite, mut star) in &mut query {
         star.depth -= star.speed * time.delta_secs();
         if star.depth <= 0.0 {
