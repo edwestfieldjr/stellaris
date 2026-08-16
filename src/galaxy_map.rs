@@ -7,6 +7,7 @@ use crate::hud::credits_closed;
 use crate::hud_bridge::{ScreenKind, ScreenText};
 use crate::mouse::{cursor_world_pos, screen_to_world_pos};
 use crate::state::{AppState, Campaign, WarpTarget};
+use crate::virtual_input::{VirtualFirePending, VirtualNudge};
 
 /// The galaxy grid always renders inside roughly this many pixels square,
 /// regardless of how big `size` gets, so later (bigger) levels still fit
@@ -108,18 +109,31 @@ struct GridVisual;
 #[derive(Component)]
 struct Cursor(Vec2);
 
+/// Accumulated on-screen-wheel drag since the last cell step (tall-portrait
+/// layout's trackpad — see `virtual_input.rs`). Sector selection is
+/// inherently a grid-cell choice, so this steps `campaign.sector` by one
+/// cell at a time the same way arrow keys do, rather than moving a
+/// free-floating cursor.
+#[derive(Resource, Default)]
+struct GalaxyNudgeAccum(Vec2);
+
+/// Drag distance (px) that banks one cell step.
+const GALAXY_NUDGE_STEP: f32 = 60.0;
+
 pub struct GalaxyMapPlugin;
 
 impl Plugin for GalaxyMapPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<GalaxyGrid>()
             .init_resource::<Banner>()
+            .init_resource::<GalaxyNudgeAccum>()
             .add_systems(OnEnter(AppState::GalaxyMap), setup)
             .add_systems(OnExit(AppState::GalaxyMap), teardown)
             .add_systems(
                 Update,
                 (
                     move_cursor,
+                    virtual_nudge_cursor,
                     mouse_hover,
                     warp_input,
                     touch_select,
@@ -250,6 +264,51 @@ fn move_cursor(
     }
 }
 
+/// Same idea as `move_cursor`'s arrow-key handling, driven by the
+/// tall-portrait layout's on-screen trackpad instead: banks drag distance
+/// per axis and steps the selection by one cell each time a full
+/// `GALAXY_NUDGE_STEP` accumulates, rather than moving continuously.
+fn virtual_nudge_cursor(
+    virtual_nudge: Res<VirtualNudge>,
+    grid: Res<GalaxyGrid>,
+    mut campaign: ResMut<Campaign>,
+    mut accum: ResMut<GalaxyNudgeAccum>,
+    mut cursor_query: Query<(&Cursor, &mut Transform)>,
+) {
+    accum.0 += virtual_nudge.0;
+    let mut moved = false;
+
+    while accum.0.x >= GALAXY_NUDGE_STEP && campaign.sector.0 < grid.size - 1 {
+        campaign.sector.0 += 1;
+        accum.0.x -= GALAXY_NUDGE_STEP;
+        moved = true;
+    }
+    while accum.0.x <= -GALAXY_NUDGE_STEP && campaign.sector.0 > 0 {
+        campaign.sector.0 -= 1;
+        accum.0.x += GALAXY_NUDGE_STEP;
+        moved = true;
+    }
+    while accum.0.y >= GALAXY_NUDGE_STEP && campaign.sector.1 < grid.size - 1 {
+        campaign.sector.1 += 1;
+        accum.0.y -= GALAXY_NUDGE_STEP;
+        moved = true;
+    }
+    while accum.0.y <= -GALAXY_NUDGE_STEP && campaign.sector.1 > 0 {
+        campaign.sector.1 -= 1;
+        accum.0.y += GALAXY_NUDGE_STEP;
+        moved = true;
+    }
+    // Clamp rather than let it bank unboundedly against an edge — otherwise
+    // pushing against the grid's border for a while, then having room to
+    // move again (say, after a level regenerates a bigger grid), would
+    // dump the cursor several cells at once from stored-up drag.
+    accum.0 = accum.0.clamp(Vec2::splat(-GALAXY_NUDGE_STEP), Vec2::splat(GALAXY_NUDGE_STEP));
+
+    if moved {
+        snap_cursor_visuals(&grid, campaign.sector, &mut cursor_query);
+    }
+}
+
 /// Selects whichever cell the mouse is hovering, but only on frames the
 /// cursor actually moved, so it doesn't fight arrow-key input by
 /// re-asserting a stale position every frame.
@@ -330,14 +389,21 @@ fn resolve_sector_choice(
 fn warp_input(
     keys: Res<ButtonInput<KeyCode>>,
     mouse: Res<ButtonInput<MouseButton>>,
+    mut virtual_fire: ResMut<VirtualFirePending>,
     mut campaign: ResMut<Campaign>,
     mut grid: ResMut<GalaxyGrid>,
     mut next_state: ResMut<NextState<AppState>>,
     mut warp_target: ResMut<WarpTarget>,
 ) {
+    // The tall-portrait layout's on-screen trackpad reports its tap
+    // through `VirtualFirePending` — no matching Bevy input event of its
+    // own to key off, so it's consumed here unconditionally like the
+    // other input sources, same pattern as flight.rs's `shoot`.
+    let fired = std::mem::take(&mut virtual_fire.0);
     if !keys.just_pressed(KeyCode::Enter)
         && !keys.just_pressed(KeyCode::Space)
         && !mouse.just_pressed(MouseButton::Left)
+        && !fired
     {
         return;
     }

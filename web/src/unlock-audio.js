@@ -30,7 +30,13 @@ for (const name of ['AudioContext', 'webkitAudioContext']) {
 
 function unlockAudio() {
   for (const ctx of audioContexts) {
-    if (ctx.state === 'suspended') {
+    // Not just 'suspended': iOS Safari/Chrome also has an 'interrupted'
+    // state (the OS audio session got preempted — another app, a phone
+    // call, the silent switch, or sometimes just how the context starts
+    // out) that a plain `state === 'suspended'` check silently misses,
+    // leaving resume() never even attempted. Try on anything that isn't
+    // already the one state that means "actually playing".
+    if (ctx.state !== 'running') {
       ctx.resume().catch(() => {})
     }
   }
