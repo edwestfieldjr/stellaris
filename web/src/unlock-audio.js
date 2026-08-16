@@ -1,0 +1,41 @@
+// The game's audio (Rust, via rodio/cpal) opens its Web Audio AudioContext
+// at app startup, before the player has interacted with the page at all.
+// Browsers only let an AudioContext actually start producing sound once
+// there has been a real user gesture — otherwise it's created (and stays)
+// "suspended" forever, with no error anywhere: playback calls all silently
+// succeed and produce no sound. iOS Safari in particular does NOT
+// auto-resume a suspended context on later interaction; it only resumes one
+// that's `.resume()`d from directly inside a genuine gesture handler. Since
+// the Rust side's own resume() attempt happens before any gesture exists,
+// it doesn't count.
+//
+// Fix: intercept every AudioContext the page creates (imported before the
+// wasm module, so this runs before the game creates its own), and resume
+// all of them on the player's first tap/click/key press anywhere on the
+// page. This is the same shim other wasm/web game engines (Unity WebGL,
+// Godot, etc.) ship for the same reason.
+const audioContexts = []
+
+for (const name of ['AudioContext', 'webkitAudioContext']) {
+  const Native = window[name]
+  if (!Native) continue
+  window[name] = new Proxy(Native, {
+    construct(target, args) {
+      const ctx = new target(...args)
+      audioContexts.push(ctx)
+      return ctx
+    },
+  })
+}
+
+function unlockAudio() {
+  for (const ctx of audioContexts) {
+    if (ctx.state === 'suspended') {
+      ctx.resume().catch(() => {})
+    }
+  }
+}
+
+for (const evt of ['pointerdown', 'touchend', 'keydown']) {
+  window.addEventListener(evt, unlockAudio, { passive: true })
+}
