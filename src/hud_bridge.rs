@@ -39,14 +39,65 @@ pub struct HudRequests {
     pub open_credits: bool,
 }
 
+/// Which non-Flight screen (if any) the React overlay should render text
+/// for. Everything on these screens was, like the Flight HUD `HudStats`
+/// above, plain Bevy text pinned to the fixed 900x650 canvas space — with
+/// the same cropping problem once cover-fit started covering an arbitrary
+/// aspect ratio instead of letterboxing.
+#[derive(Default, Clone, Copy, PartialEq, Eq)]
+pub enum ScreenKind {
+    #[default]
+    None,
+    Title,
+    GalaxyMap,
+    GameOver,
+}
+
+impl ScreenKind {
+    fn as_str(self) -> &'static str {
+        match self {
+            ScreenKind::None => "",
+            ScreenKind::Title => "title",
+            ScreenKind::GalaxyMap => "galaxy_map",
+            ScreenKind::GameOver => "game_over",
+        }
+    }
+}
+
+/// Live values for whichever screen is current; fields not relevant to
+/// that screen are left at their defaults and simply ignored on the React
+/// side. The title screen's own copy and the galaxy map's instructions
+/// line are static enough that React just hardcodes them (matching what
+/// used to be in `title.rs`/`galaxy_map.rs`) rather than needing them
+/// pushed through here too.
+#[derive(Resource, Default, Clone, PartialEq)]
+pub struct ScreenText {
+    pub screen: ScreenKind,
+    /// Galaxy map.
+    pub fuel: f32,
+    pub level: u32,
+    /// Galaxy map: "LEVEL N - the Zerlak Empire regroups..." while it's
+    /// showing, empty otherwise.
+    pub banner: String,
+    /// Galaxy map: seconds left before a sector is auto-picked.
+    pub countdown: f32,
+    /// Game over.
+    pub defeat_reason: String,
+}
+
 pub struct HudBridgePlugin;
 
 impl Plugin for HudBridgePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<HudStats>()
             .init_resource::<HudRequests>()
+            .init_resource::<ScreenText>()
             .add_systems(PreUpdate, poll_hud_requests)
-            .add_systems(Update, push_hud_stats.run_if(resource_changed::<HudStats>));
+            .add_systems(Update, push_hud_stats.run_if(resource_changed::<HudStats>))
+            .add_systems(
+                Update,
+                push_screen_text.run_if(resource_changed::<ScreenText>),
+            );
     }
 }
 
@@ -68,6 +119,17 @@ fn push_hud_stats(stats: Res<HudStats>) {
         stats.fuel,
         stats.score,
         stats.muted,
+    );
+}
+
+fn push_screen_text(text: Res<ScreenText>) {
+    bridge::push_screen(
+        text.screen.as_str(),
+        text.fuel,
+        text.level,
+        &text.banner,
+        text.countdown,
+        &text.defeat_reason,
     );
 }
 
@@ -124,6 +186,30 @@ mod bridge {
     pub(super) fn push(visible: bool, remaining: u32, health: f32, fuel: f32, score: u32, muted: bool) {
         zerlak_hud_update(visible, remaining, health, fuel, score, muted);
     }
+
+    #[wasm_bindgen]
+    extern "C" {
+        #[wasm_bindgen(js_namespace = window, js_name = __zerlakScreenTextUpdate)]
+        fn zerlak_screen_text_update(
+            screen: &str,
+            fuel: f32,
+            level: u32,
+            banner: &str,
+            countdown: f32,
+            defeat_reason: &str,
+        );
+    }
+
+    pub(super) fn push_screen(
+        screen: &str,
+        fuel: f32,
+        level: u32,
+        banner: &str,
+        countdown: f32,
+        defeat_reason: &str,
+    ) {
+        zerlak_screen_text_update(screen, fuel, level, banner, countdown, defeat_reason);
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -139,6 +225,16 @@ mod bridge {
         _fuel: f32,
         _score: u32,
         _muted: bool,
+    ) {
+    }
+
+    pub(super) fn push_screen(
+        _screen: &str,
+        _fuel: f32,
+        _level: u32,
+        _banner: &str,
+        _countdown: f32,
+        _defeat_reason: &str,
     ) {
     }
 }

@@ -1,4 +1,6 @@
-use bevy::audio::{AudioPlayer, AudioSource, GlobalVolume, PlaybackSettings, Volume};
+use bevy::audio::{
+    AudioPlayer, AudioSink, AudioSinkPlayback, AudioSource, GlobalVolume, PlaybackSettings, Volume,
+};
 use bevy::prelude::*;
 
 use crate::hud_bridge::{HudRequests, HudStats};
@@ -21,6 +23,9 @@ pub(crate) struct CreditsOpen(bool);
 pub fn credits_closed(credits_open: Res<CreditsOpen>) -> bool {
     !credits_open.0
 }
+
+#[derive(Component)]
+struct MusicTrack;
 
 #[derive(Component)]
 struct CreditsPanel;
@@ -56,15 +61,27 @@ impl Plugin for PersistentUiPlugin {
     }
 }
 
+const MUSIC_VOLUME: f32 = 0.22;
+
 fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     // Ambient music bed: a single looping track spawned once at startup (not
     // tied to any AppState) so it plays continuously under the title,
     // galaxy map, flight, and warp screens alike instead of restarting or
-    // cutting out on every transition. Sits well under the SFX volume, and
-    // rides the same `GlobalVolume` mute toggle as everything else below.
+    // cutting out on every transition. Sits well under the SFX volume.
+    //
+    // Doesn't rely on `GlobalVolume` for muting, unlike the SFX below:
+    // bevy_audio only multiplies a sink's volume by `GlobalVolume` once, at
+    // the moment the sink is *created* (see `play_queued_audio_system` in
+    // bevy_audio) — it never revisits already-playing sinks when
+    // `GlobalVolume` changes later. That's invisible for the SFX (each one
+    // is freshly spawned, and so freshly volume-set, every time it plays)
+    // but this sink is created exactly once at startup and then loops
+    // forever, so it never sees a later mute toggle at all. `toggle_mute`
+    // below mutes this specific sink directly instead.
     commands.spawn((
         AudioPlayer(asset_server.load::<AudioSource>("sounds/music_bed.wav")),
-        PlaybackSettings::LOOP.with_volume(Volume::Linear(0.22)),
+        PlaybackSettings::LOOP.with_volume(Volume::Linear(MUSIC_VOLUME)),
+        MusicTrack,
     ));
 }
 
@@ -73,6 +90,7 @@ fn toggle_mute(
     mut muted: ResMut<Muted>,
     mut global_volume: ResMut<GlobalVolume>,
     mut hud_stats: ResMut<HudStats>,
+    mut music_sink: Query<&mut AudioSink, With<MusicTrack>>,
 ) {
     if !std::mem::take(&mut requests.toggle_mute) {
         return;
@@ -83,6 +101,16 @@ fn toggle_mute(
     } else {
         Volume::Linear(1.0)
     };
+    // GlobalVolume only affects sinks at the moment they're created (see
+    // the comment in `setup`) — the music sink already exists by now, so
+    // it needs to be muted directly.
+    if let Ok(mut sink) = music_sink.single_mut() {
+        if muted.0 {
+            sink.mute();
+        } else {
+            sink.unmute();
+        }
+    }
     // Field write, not a full struct replace: keeps whatever
     // remaining/health/fuel/score `HudStats` already had.
     hud_stats.muted = muted.0;

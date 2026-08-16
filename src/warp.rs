@@ -2,6 +2,7 @@ use bevy::prelude::*;
 use rand::RngExt as _;
 use std::f32::consts::TAU;
 
+use crate::hud_bridge::ScreenText;
 use crate::state::{AppState, WarpTarget};
 
 const WARP_SECONDS: f32 = 0.9;
@@ -44,11 +45,17 @@ impl Plugin for WarpPlugin {
     }
 }
 
-fn setup(mut commands: Commands, warp_target: Res<WarpTarget>) {
+fn setup(mut commands: Commands, warp_target: Res<WarpTarget>, mut screen_text: ResMut<ScreenText>) {
     commands.insert_resource(WarpTimer(Timer::from_seconds(
         WARP_SECONDS,
         TimerMode::Once,
     )));
+
+    // Warp is the only path between GalaxyMap and Flight in either
+    // direction — clear whichever screen's text was showing (GalaxyMap's
+    // fuel/level/banner/countdown) so it doesn't linger behind the warp
+    // animation and into Flight, which doesn't push its own ScreenText.
+    *screen_text = ScreenText::default();
 
     let mut rng = rand::rng();
     for _ in 0..STREAK_COUNT {

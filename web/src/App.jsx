@@ -30,6 +30,14 @@ window.__zerlakHudUpdate = (visible, remaining, health, fuel, score, muted) => {
   for (const listener of hudListeners) listener(stats)
 }
 
+// Same idea as the HUD stat channel above, for whichever of Title/Galaxy
+// Map/Game Over is current — see the comment on `ScreenTextOverlay`.
+const screenTextListeners = new Set()
+window.__zerlakScreenTextUpdate = (screen, fuel, level, banner, countdown, defeatReason) => {
+  const text = { screen, fuel, level, banner, countdown, defeatReason }
+  for (const listener of screenTextListeners) listener(text)
+}
+
 export default function App() {
   const [status, setStatus] = useState('loading') // 'loading' | 'ready' | 'error'
   const started = useRef(false)
@@ -106,14 +114,13 @@ export default function App() {
         )}
         <FullscreenButton />
         <HudOverlay />
+        <ScreenTextOverlay />
       </div>
       {/* Only takes any layout space on tall-portrait screens (see the
           @media rule in App.css) — the game-area above always fills
           whatever's left, so the playfield never shows letterbox bars in
           either layout. */}
-      <div className="control-cluster">
-        <VirtualWheel />
-      </div>
+      <TouchPad />
     </div>
   )
 }
@@ -200,20 +207,106 @@ function HudOverlay() {
   )
 }
 
-// A circular drag surface — trackpad-style, not a joystick: dragging moves
-// the crosshair by the drag's motion, the same way dragging a mouse or a
-// laptop trackpad moves a cursor, not by snapping to a held direction from
-// center. Lift and drag again to keep going, exactly like a trackpad
-// stroke. The center "click wheel" button is FIRE (one shot per press) —
-// styled after the old iPod click wheel, reserved for tall-portrait screens
-// where a one-tap crosshair doesn't leave enough room for both aiming and
-// firing precisely.
-function VirtualWheel() {
+// Title/Galaxy Map/Game Over screen text — rendered in the DOM instead of
+// by Bevy for the same reason as `HudOverlay`: pinned to `.game-area` (the
+// real viewport box), not the fixed 900x650 canvas space cover-fit can
+// crop. Title's heading and the galaxy map's instructions line are static
+// enough that they're just hardcoded here (matching what used to be
+// spawned in title.rs/galaxy_map.rs) instead of round-tripping unchanging
+// strings through the bridge every frame; only the handful of values that
+// actually vary (fuel, level, banner, countdown, defeat reason) come from
+// Rust via `window.__zerlakScreenTextUpdate`.
+function ScreenTextOverlay() {
+  const [text, setText] = useState({
+    screen: '',
+    fuel: 0,
+    level: 0,
+    banner: '',
+    countdown: 0,
+    defeatReason: '',
+  })
+
+  useEffect(() => {
+    screenTextListeners.add(setText)
+    return () => screenTextListeners.delete(setText)
+  }, [])
+
+  if (text.screen === 'title') {
+    return (
+      <div className="screen-text-center">
+        <div className="title-heading">ZERLAK FRONTIER</div>
+        <div className="title-subtitle">A Zerlak incursion threatens the frontier.</div>
+        <div className="title-instructions">
+          GALAXY MAP - Arrows/mouse: pick a sector&nbsp;&nbsp;&nbsp;Enter/Space/click: warp in
+          <br />
+          Red = Zerlak (fight it)&nbsp;&nbsp;&nbsp;Blue = Friendly (refuel)&nbsp;&nbsp;&nbsp;decide fast, or one
+          gets picked for you
+          <br />
+          <br />
+          FLIGHT - Arrows/mouse: aim&nbsp;&nbsp;&nbsp;Space/click: fire
+          <br />
+          Dodge a charging enemy laser by moving your crosshair clear before it fires
+          <br />
+          <br />
+          Fuel or health hits zero and the mission ends. Esc always backs out a screen.
+        </div>
+        <div className="title-prompt">Enter / Click / Tap: launch&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Esc: quit</div>
+      </div>
+    )
+  }
+
+  if (text.screen === 'galaxy_map') {
+    return (
+      <>
+        <div className="galaxy-stats">
+          <div>Fuel: {Math.round(text.fuel)}</div>
+          <div className="galaxy-level">Level {text.level}</div>
+        </div>
+        <div className="galaxy-banner-area">
+          {text.banner && <div className="galaxy-banner">{text.banner}</div>}
+          <div className="galaxy-countdown">Zerlak lock in {text.countdown.toFixed(2)}s</div>
+        </div>
+        <div className="galaxy-instructions">
+          Arrows/mouse: select&nbsp;&nbsp;&nbsp;&nbsp;Enter/Space/click: warp&nbsp;&nbsp;&nbsp;&nbsp;Esc: quit
+          to title&nbsp;&nbsp;&nbsp;&nbsp;(Zerlak = red, Friendly = blue)
+        </div>
+      </>
+    )
+  }
+
+  if (text.screen === 'game_over') {
+    return (
+      <div className="screen-text-center">
+        <div className="gameover-heading">MISSION FAILED</div>
+        <div className="gameover-reason">{text.defeatReason}</div>
+        <div className="gameover-level">Reached level {text.level}</div>
+        <div className="gameover-prompt">Enter / Click / Tap: return to title</div>
+      </div>
+    )
+  }
+
+  return null
+}
+
+// The entire lower-third strip (tall-portrait layout only) is one
+// trackpad, not just the drawn wheel graphic inside it — trackpad-style,
+// not a joystick: dragging moves the crosshair by the drag's own motion,
+// the same way dragging a mouse or a laptop trackpad moves a cursor, not
+// by snapping to a held direction from center. Lift and drag again to
+// keep going, exactly like a trackpad stroke. Every tap anywhere in the
+// strip fires (once per touch-down), same as tapping the playfield
+// directly does outside this layout — the whole area exists so aiming and
+// firing don't fight over the same point under your finger, not to gate
+// firing behind a specific sub-region. The drawn wheel (styled after the
+// old iPod click wheel) is purely decorative, indicating "drag here" —
+// `pointer-events: none`, it never intercepts anything itself.
+function TouchPad() {
   const lastPos = useRef(null)
 
   const onPointerDown = (e) => {
     e.currentTarget.setPointerCapture(e.pointerId)
     lastPos.current = { x: e.clientX, y: e.clientY }
+    window.__zerlakTriggerFire()
   }
   const onPointerMove = (e) => {
     if (!lastPos.current) return
@@ -229,23 +322,19 @@ function VirtualWheel() {
 
   return (
     <div
-      className="ipod-wheel"
+      className="control-cluster"
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerEnd}
       onPointerCancel={onPointerEnd}
     >
-      <button
-        type="button"
-        className="ipod-fire"
-        aria-label="Fire"
-        onPointerDown={(e) => {
-          e.stopPropagation()
-          window.__zerlakTriggerFire()
-        }}
-      >
-        FIRE
-      </button>
+      <div className="ipod-wheel">
+        <span className="ipod-wheel-arrow ipod-wheel-arrow-up" />
+        <span className="ipod-wheel-arrow ipod-wheel-arrow-down" />
+        <span className="ipod-wheel-arrow ipod-wheel-arrow-left" />
+        <span className="ipod-wheel-arrow ipod-wheel-arrow-right" />
+        <div className="ipod-fire" />
+      </div>
     </div>
   )
 }

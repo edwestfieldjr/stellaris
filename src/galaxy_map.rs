@@ -4,6 +4,7 @@ use rand::RngExt as _;
 use std::collections::HashMap;
 
 use crate::hud::credits_closed;
+use crate::hud_bridge::{ScreenKind, ScreenText};
 use crate::mouse::{cursor_world_pos, screen_to_world_pos};
 use crate::state::{AppState, Campaign, WarpTarget};
 
@@ -107,18 +108,6 @@ struct GridVisual;
 #[derive(Component)]
 struct Cursor(Vec2);
 
-#[derive(Component)]
-struct FuelText;
-
-#[derive(Component)]
-struct LevelText;
-
-#[derive(Component)]
-struct BannerText;
-
-#[derive(Component)]
-struct CountdownText;
-
 pub struct GalaxyMapPlugin;
 
 impl Plugin for GalaxyMapPlugin {
@@ -138,10 +127,7 @@ impl Plugin for GalaxyMapPlugin {
                     check_level_complete,
                     spread_zerlaks,
                     quit_to_title,
-                    update_fuel_text,
-                    update_level_text,
-                    update_banner,
-                    update_countdown_text,
+                    push_galaxy_screen_text,
                 )
                     .chain()
                     .run_if(in_state(AppState::GalaxyMap).and_then(credits_closed)),
@@ -170,95 +156,11 @@ fn setup(mut commands: Commands, grid: Res<GalaxyGrid>, campaign: Res<Campaign>)
 
     spawn_grid_visuals(&mut commands, &grid, &campaign);
 
-    commands.spawn((
-        Text::new(format!("Fuel: {:.0}", campaign.fuel.max(0.0))),
-        TextFont {
-            font_size: bevy::text::FontSize::Px(24.0),
-            ..default()
-        },
-        TextColor(Color::WHITE),
-        Node {
-            position_type: PositionType::Absolute,
-            top: Val::Px(10.0),
-            left: Val::Px(10.0),
-            ..default()
-        },
-        FuelText,
-        GalaxyMapUi,
-    ));
-
-    commands.spawn((
-        Text::new(format!("Level {}", campaign.level)),
-        TextFont {
-            font_size: bevy::text::FontSize::Px(18.0),
-            ..default()
-        },
-        TextColor(Color::srgb(0.8, 0.8, 0.4)),
-        Node {
-            position_type: PositionType::Absolute,
-            top: Val::Px(40.0),
-            left: Val::Px(10.0),
-            ..default()
-        },
-        LevelText,
-        GalaxyMapUi,
-    ));
-
-    commands.spawn((
-        Text::new(""),
-        TextFont {
-            font_size: bevy::text::FontSize::Px(28.0),
-            ..default()
-        },
-        TextColor(Color::srgb(1.0, 0.85, 0.3)),
-        TextLayout::default().with_justify(Justify::Center),
-        Node {
-            position_type: PositionType::Absolute,
-            top: Val::Px(10.0),
-            left: Val::Px(0.0),
-            right: Val::Px(0.0),
-            ..default()
-        },
-        BannerText,
-        GalaxyMapUi,
-    ));
-
-    commands.spawn((
-        Text::new(""),
-        TextFont {
-            font_size: bevy::text::FontSize::Px(20.0),
-            ..default()
-        },
-        TextColor(Color::srgb(1.0, 0.55, 0.2)),
-        TextLayout::default().with_justify(Justify::Center),
-        Node {
-            position_type: PositionType::Absolute,
-            top: Val::Px(60.0),
-            left: Val::Px(0.0),
-            right: Val::Px(0.0),
-            ..default()
-        },
-        CountdownText,
-        GalaxyMapUi,
-    ));
-
-    commands.spawn((
-        Text::new(
-            "Arrows/mouse: select    Enter/Space/click: warp    Esc: quit to title    (Zerlak = red, Friendly = blue)",
-        ),
-        TextFont {
-            font_size: bevy::text::FontSize::Px(16.0),
-            ..default()
-        },
-        TextColor(Color::srgb(0.8, 0.8, 0.8)),
-        Node {
-            position_type: PositionType::Absolute,
-            bottom: Val::Px(10.0),
-            left: Val::Px(10.0),
-            ..default()
-        },
-        GalaxyMapUi,
-    ));
+    // No on-canvas Fuel/Level/banner/countdown/instructions text anymore —
+    // all of it read from the fixed 900x650 game space, which the web
+    // frontend's cover-fit layout can crop on some aspect ratios (see
+    // hud_bridge.rs). It's all in the React-rendered overlay instead now;
+    // `push_galaxy_screen_text` keeps it fed every frame this screen is up.
 }
 
 fn spawn_grid_visuals(commands: &mut Commands, grid: &GalaxyGrid, campaign: &Campaign) {
@@ -565,53 +467,38 @@ fn quit_to_title(keys: Res<ButtonInput<KeyCode>>, mut next_state: ResMut<NextSta
     }
 }
 
-fn update_fuel_text(campaign: Res<Campaign>, mut query: Query<&mut Text, With<FuelText>>) {
-    if !campaign.is_changed() {
-        return;
-    }
-    if let Ok(mut text) = query.single_mut() {
-        **text = format!("Fuel: {:.0}", campaign.fuel.max(0.0));
-    }
-}
-
-fn update_level_text(campaign: Res<Campaign>, mut query: Query<&mut Text, With<LevelText>>) {
-    if !campaign.is_changed() {
-        return;
-    }
-    if let Ok(mut text) = query.single_mut() {
-        **text = format!("Level {}", campaign.level);
-    }
-}
-
-/// Updates every frame (not gated on change) so the hundredths digit
-/// actually ticks smoothly instead of jumping once a second.
-fn update_countdown_text(
-    timer: Res<DecisionTimer>,
-    mut query: Query<&mut Text, With<CountdownText>>,
-) {
-    let remaining = timer.0.remaining_secs().max(0.0);
-    if let Ok(mut text) = query.single_mut() {
-        **text = format!("Zerlak lock in {remaining:.2}s");
-    }
-}
-
-fn update_banner(
+/// Keeps the React-rendered HUD overlay fed with Fuel/Level/banner/
+/// countdown every frame this screen is up — replaces what used to be
+/// four separate on-canvas Text-updating systems (see `hud_bridge.rs`).
+/// Recomputes unconditionally rather than gating on individual pieces
+/// changing: the countdown needs a fresh value every frame anyway (for its
+/// hundredths digit to tick smoothly instead of jumping once a second),
+/// and this is a menu screen, not a hot path.
+fn push_galaxy_screen_text(
     time: Res<Time>,
     campaign: Res<Campaign>,
+    timer: Res<DecisionTimer>,
     mut banner: ResMut<Banner>,
-    mut query: Query<&mut Text, With<BannerText>>,
+    mut screen_text: ResMut<ScreenText>,
 ) {
-    let Some(timer) = banner.timer.as_mut() else {
-        return;
-    };
-    timer.tick(time.delta());
-    if let Ok(mut text) = query.single_mut() {
-        **text = format!("LEVEL {} - the Zerlak Empire regroups...", campaign.level);
-    }
-    if timer.is_finished() {
-        banner.timer = None;
-        if let Ok(mut text) = query.single_mut() {
-            **text = String::new();
+    let banner_text = if let Some(banner_timer) = banner.timer.as_mut() {
+        banner_timer.tick(time.delta());
+        if banner_timer.is_finished() {
+            banner.timer = None;
+            String::new()
+        } else {
+            format!("LEVEL {} - the Zerlak Empire regroups...", campaign.level)
         }
-    }
+    } else {
+        String::new()
+    };
+
+    *screen_text = ScreenText {
+        screen: ScreenKind::GalaxyMap,
+        fuel: campaign.fuel.max(0.0),
+        level: campaign.level,
+        banner: banner_text,
+        countdown: timer.0.remaining_secs().max(0.0),
+        defeat_reason: String::new(),
+    };
 }
