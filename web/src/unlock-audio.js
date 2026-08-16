@@ -36,6 +36,14 @@ function unlockAudio() {
   }
 }
 
-for (const evt of ['pointerdown', 'touchend', 'keydown']) {
-  window.addEventListener(evt, unlockAudio, { passive: true })
+// Capture phase, not bubble: winit's own touch handling on the game canvas
+// calls stopPropagation (to block the browser's default gesture handling —
+// pull-to-refresh, pinch-zoom, and so on), which would otherwise silently
+// swallow every tap before it ever reached a bubble-phase listener on
+// `window`. Capture-phase listeners run on the way *down* to the target,
+// before the canvas's own handler gets a chance to stop anything — this is
+// almost certainly why muting/unmuting a real desktop click worked while a
+// tap on the actual game canvas on a phone never unlocked audio at all.
+for (const evt of ['pointerdown', 'touchstart', 'touchend', 'mousedown', 'keydown']) {
+  window.addEventListener(evt, unlockAudio, { passive: true, capture: true })
 }
