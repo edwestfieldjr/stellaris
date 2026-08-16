@@ -2,9 +2,11 @@ mod flight;
 mod galaxy_map;
 mod game_over;
 mod hud;
+mod hud_bridge;
 mod mouse;
 mod state;
 mod title;
+mod virtual_input;
 mod warp;
 
 use bevy::prelude::*;
@@ -13,8 +15,10 @@ use flight::FlightPlugin;
 use galaxy_map::GalaxyMapPlugin;
 use game_over::GameOverPlugin;
 use hud::PersistentUiPlugin;
+use hud_bridge::HudBridgePlugin;
 use state::{AppState, Campaign, WarpTarget};
 use title::TitlePlugin;
+use virtual_input::VirtualInputPlugin;
 use warp::WarpPlugin;
 
 fn main() {
@@ -62,6 +66,8 @@ fn main() {
             FlightPlugin,
             GameOverPlugin,
             PersistentUiPlugin,
+            VirtualInputPlugin,
+            HudBridgePlugin,
         ))
         .add_systems(Startup, spawn_camera)
         .run();

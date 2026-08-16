@@ -4661,6 +4661,7 @@ dependencies = [
  "bevy",
  "getrandom 0.4.3",
  "rand",
+ "wasm-bindgen",
 ]
 
 [[package]]

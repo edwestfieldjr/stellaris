@@ -9,9 +9,14 @@ rand = "0.10.2"
 
 # rand/bevy pull in getrandom transitively; on wasm32 it needs an explicit
 # backend (browser crypto via wasm-bindgen), enabled here and selected via
-# .cargo/config.toml's rustflags.
+# .cargo/config.toml's rustflags. wasm-bindgen itself is also already a
+# transitive dependency (via bevy's own wasm support) — pinned here to the
+# exact version already resolved in Cargo.lock so adding it directly (for
+# src/virtual_input.rs's exported JS-facing functions) doesn't pull in a
+# second, conflicting copy.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { version = "0.4", features = ["wasm_js"] }
+wasm-bindgen = "=0.2.127"
 
 # LTO + stripped debug info substantially shrinks both the native binary
 # and (especially) the wasm one; opt-level stays at the default (3) so

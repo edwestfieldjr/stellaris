@@ -38,6 +38,9 @@ pub struct Campaign {
     pub level: u32,
     /// Set when a run ends, so the GameOver screen can say why.
     pub defeat_reason: Option<DefeatReason>,
+    /// Running tally for the whole campaign. Placeholder scoring: a flat
+    /// award per kill (see `flight::SCORE_PER_KILL`), no bonuses yet.
+    pub score: u32,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -54,6 +57,7 @@ impl Default for Campaign {
             sector: (0, 0),
             level: 1,
             defeat_reason: None,
+            score: 0,
         }
     }
 }

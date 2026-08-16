@@ -1,56 +1,53 @@
+/* Pure black, not index.css's #05060a -- with the playfield now covering
+   edge to edge and a fullscreen mode in play, any stray rounding-error
+   sliver at the border should read as bezel, not a visible off-color
+   line. */
+html,
+body {
+  background: #000;
+}
+
 .stage {
   width: 100vw;
   height: 100vh;
   height: 100dvh;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  background: #05060a;
+  flex-direction: column;
+  background: #000;
   overflow: hidden;
   padding: env(safe-area-inset-top) env(safe-area-inset-right)
     env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
 
-/* Letterboxed to the game's native ~900x650 aspect ratio so none of its
-   hardcoded pixel layout (grid, HUD text, crosshair spread) needs to
-   change across wildly different phone/tablet/desktop screen shapes. */
-.viewport {
+/* Always fills whatever space is left after `.control-cluster` (which only
+   takes any on tall-portrait screens — see its @media rule below), so the
+   playfield fills the entire browser window edge to edge in every layout,
+   landscape or portrait, with no letterbox bars. */
+.game-area {
   position: relative;
-  width: min(100%, calc(100dvh * 900 / 650));
-  height: min(100%, calc(100dvw * 650 / 900));
-  aspect-ratio: 900 / 650;
-  background: #0d0f14;
-  box-shadow: 0 0 60px rgba(0, 0, 0, 0.6);
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
   overflow: hidden;
-}
-
-/* Belt-and-suspenders for browsers that don't understand dvh/dvw: an @supports
-   block (unlike a plain duplicate declaration) survives the production CSS
-   minifier, which otherwise treats two declarations of the same property as
-   dead-code-eliminates the earlier one outright, regardless of unit support. */
-@supports not (height: 100dvh) {
-  .viewport {
-    width: min(100%, calc(100vh * 900 / 650));
-    height: min(100%, calc(100vw * 650 / 900));
-  }
+  background: #0d0f14;
 }
 
 /* Always exactly the game's native 900x650 resolution, in real CSS pixels,
-   and NEVER resized in response to the screen — App.jsx scales this down to
-   fit `.viewport` with a `transform`, not by changing its box size.
-   That distinction matters: winit's web backend installs a `ResizeObserver`
-   on the canvas (unrelated to Bevy's `fit_canvas_to_parent` flag, which we
-   don't use), and bevy_winit's resize handling unconditionally shrinks the
-   game's internal `Window.resolution` to match whatever size the canvas
-   actually renders at. Force the canvas smaller with plain width/height CSS
-   (even `!important`) and that observer fires, Bevy's internal 900x650
-   layout resolution shrinks to match the phone-sized canvas, and every
-   hardcoded pixel position (HUD, crosshair range, galaxy grid) ends up laid
-   out for a viewport many times smaller than intended — only its top-left
-   corner ever visible. A `transform` is applied after layout and never
-   touches the element's box size, so it's invisible to that observer: the
-   canvas is always, as far as winit is concerned, sitting at a boring fixed
-   900x650, and we just visually shrink the whole thing to fit afterward. */
+   and NEVER resized in response to the screen — App.jsx scales (and
+   centers) this down or up to *cover* `.game-area` with a `transform`, not
+   by changing its box size. That distinction matters: winit's web backend
+   installs a `ResizeObserver` on the canvas (unrelated to Bevy's
+   fit_canvas_to_parent flag, which we don't use), and bevy_winit's resize
+   handling unconditionally shrinks the game's internal `Window.resolution`
+   to match whatever size the canvas actually renders at. Force the canvas
+   to a different size with plain width/height CSS (even `!important`) and
+   that observer fires, Bevy's internal 900x650 layout resolution shrinks to
+   match, and every hardcoded pixel position (HUD, crosshair range, galaxy
+   grid) ends up laid out for a viewport many times smaller than intended.
+   A `transform` is applied after layout and never touches the element's box
+   size, so it's invisible to that observer: the canvas is always, as far as
+   winit is concerned, sitting at a boring fixed 900x650, and we just
+   visually scale/crop the whole thing to fill the screen afterward. */
 .canvas-wrap {
   position: absolute;
   top: 0;
@@ -86,4 +83,195 @@
   letter-spacing: 0.05em;
   background: #0d0f14;
   pointer-events: none;
+}
+
+.fullscreen-btn {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(20, 22, 28, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+}
+
+.fs-icon {
+  position: relative;
+  width: 14px;
+  height: 14px;
+}
+
+/* Four corner brackets (drawn with plain CSS borders, not a text glyph —
+   the same reason the game's own HUD avoids symbol/emoji characters: font
+   glyph coverage for this kind of icon isn't reliable everywhere). */
+.fs-icon-enter::before,
+.fs-icon-enter::after,
+.fs-icon-exit::before,
+.fs-icon-exit::after {
+  content: '';
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  border: 2px solid #cfe3f5;
+}
+
+.fs-icon-enter::before {
+  top: 0;
+  left: 0;
+  border-right: none;
+  border-bottom: none;
+}
+.fs-icon-enter::after {
+  bottom: 0;
+  right: 0;
+  border-left: none;
+  border-top: none;
+}
+
+/* Exit variant: brackets pointed inward instead of outward. */
+.fs-icon-exit::before {
+  top: 2px;
+  left: 2px;
+  border-left: none;
+  border-top: none;
+}
+.fs-icon-exit::after {
+  bottom: 2px;
+  right: 2px;
+  border-right: none;
+  border-bottom: none;
+}
+
+/* Only takes any layout height on tall-portrait screens (roughly: taller
+   than 7:5 in portrait orientation) — at that aspect ratio a one-tap
+   crosshair leaves too little precision for both aiming and firing, so
+   those screens trade the bottom third of the playfield for a dedicated
+   drag-to-aim + fire control cluster instead. Landscape and more
+   moderately-proportioned portrait screens (most phones/tablets) never show
+   this at all; `.game-area` fills the complete window in that case. */
+.control-cluster {
+  display: none;
+  flex: 0 0 34%;
+  align-items: center;
+  justify-content: center;
+  background: #050608;
+  border-top: 1px solid #000;
+}
+
+@media (max-aspect-ratio: 5/7) and (orientation: portrait) {
+  .control-cluster {
+    display: flex;
+  }
+}
+
+/* An old iPod click wheel, reimagined as a drag surface: dragging anywhere
+   on the ring moves the crosshair by the drag's own motion, trackpad-style
+   (lift and drag again to keep going), not a joystick that snaps back to
+   center. The center button is FIRE, one shot per press — matching the
+   same edge-triggered single-shot behavior as Space/click/tap everywhere
+   else in the game, not a held-down repeat. */
+.ipod-wheel {
+  position: relative;
+  width: min(58vw, 32vh, 260px);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #2a2c30, #0a0a0b 70%);
+  box-shadow:
+    inset 0 0 18px rgba(0, 0, 0, 0.8),
+    inset 0 2px 4px rgba(255, 255, 255, 0.06),
+    0 4px 14px rgba(0, 0, 0, 0.6);
+  touch-action: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ipod-fire {
+  width: 42%;
+  height: 42%;
+  border-radius: 50%;
+  border: none;
+  background: radial-gradient(circle at 35% 30%, #3a3d42, #16171a 75%);
+  color: #cfe3f5;
+  font-family: 'Courier New', monospace;
+  font-size: 0.85rem;
+  letter-spacing: 0.08em;
+  box-shadow:
+    inset 0 0 10px rgba(0, 0, 0, 0.7),
+    inset 0 1px 3px rgba(255, 255, 255, 0.08),
+    0 2px 6px rgba(0, 0, 0, 0.5);
+  touch-action: none;
+}
+
+.ipod-fire:active {
+  background: radial-gradient(circle at 35% 30%, #2c2f33, #101113 75%);
+}
+
+/* Top-left, Flight only: remaining/health/fuel/score. Rendered in the DOM
+   (pinned to `.game-area`, the real viewport box) instead of by Bevy, so
+   it can never end up outside the visible region the way on-canvas text
+   could once cover-fit started cropping the fixed 900x650 canvas on some
+   aspect ratios — see the `.canvas-wrap` comment above. */
+.hud-stats {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: #fff;
+  font-family: 'Courier New', monospace;
+  font-size: 1rem;
+  font-weight: bold;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+  pointer-events: none;
+}
+
+.hud-stats-health {
+  color: #ff6666;
+}
+
+/* Top-right, always shown: mute + credits, same reasoning as .hud-stats. */
+.hud-buttons {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.hud-mute-btn {
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: 50%;
+  background: #4dff99;
+  color: #000;
+  font-family: 'Courier New', monospace;
+  font-size: 0.8rem;
+  cursor: pointer;
+  padding: 0;
+}
+
+.hud-mute-btn-off {
+  background: #666a73;
+}
+
+.hud-credits-btn {
+  border: none;
+  border-radius: 4px;
+  padding: 5px 8px;
+  background: rgba(38, 38, 51, 0.85);
+  color: #ccccd9;
+  font-family: 'Courier New', monospace;
+  font-size: 0.75rem;
+  cursor: pointer;
 }

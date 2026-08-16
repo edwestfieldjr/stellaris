@@ -1,8 +1,7 @@
-use bevy::audio::{GlobalVolume, Volume};
+use bevy::audio::{AudioPlayer, AudioSource, GlobalVolume, PlaybackSettings, Volume};
 use bevy::prelude::*;
 
-const BTN_ON_COLOR: Color = Color::srgb(0.3, 1.0, 0.6);
-const BTN_OFF_COLOR: Color = Color::srgb(0.4, 0.4, 0.45);
+use crate::hud_bridge::{HudRequests, HudStats};
 
 #[derive(Resource)]
 struct Muted(bool);
@@ -24,24 +23,18 @@ pub fn credits_closed(credits_open: Res<CreditsOpen>) -> bool {
 }
 
 #[derive(Component)]
-struct MuteButton;
-
-#[derive(Component)]
-struct MuteButtonLabel;
-
-#[derive(Component)]
-struct CreditsButton;
-
-#[derive(Component)]
 struct CreditsPanel;
 
 #[derive(Component)]
 struct CreditsCloseButton;
 
-/// A speaker-mute toggle and a credits button, both spawned once at
-/// startup (not tied to any `AppState`) so they stay put in the corner
-/// across every screen instead of being despawned on each state's
-/// teardown.
+/// Mute state and the credits panel — no on-canvas trigger buttons here
+/// anymore (mute/credits buttons live in the React-rendered HUD overlay
+/// instead, see `hud_bridge.rs`: Bevy's fixed 900x650 canvas space stops
+/// being pinned to the *screen's* corners the moment the web frontend's
+/// cover-fit layout crops it to cover an arbitrary aspect ratio). The
+/// credits panel itself stays here — it's centered content, not
+/// corner-pinned, so that cropping isn't a problem for it.
 pub struct PersistentUiPlugin;
 
 impl Plugin for PersistentUiPlugin {
@@ -63,77 +56,25 @@ impl Plugin for PersistentUiPlugin {
     }
 }
 
-fn setup(mut commands: Commands) {
-    // Mute toggle, top-right corner. The label is plain ASCII (not a
-    // speaker emoji) since neither the embedded default font nor the web
-    // build's font reliably has emoji glyphs — same class of bug the
-    // em-dashes hit earlier.
-    commands
-        .spawn((
-            Button,
-            Node {
-                position_type: PositionType::Absolute,
-                top: Val::Px(10.0),
-                right: Val::Px(10.0),
-                width: Val::Px(34.0),
-                height: Val::Px(34.0),
-                align_items: AlignItems::Center,
-                justify_content: JustifyContent::Center,
-                border_radius: BorderRadius::all(Val::Px(17.0)),
-                ..default()
-            },
-            BackgroundColor(BTN_ON_COLOR),
-            GlobalZIndex(100),
-            MuteButton,
-        ))
-        .with_children(|parent| {
-            parent.spawn((
-                Text::new(")))"),
-                TextFont {
-                    font_size: bevy::text::FontSize::Px(13.0),
-                    ..default()
-                },
-                TextColor(Color::BLACK),
-                MuteButtonLabel,
-            ));
-        });
-
-    // Credits button, stacked just below the mute toggle.
-    commands
-        .spawn((
-            Button,
-            Node {
-                position_type: PositionType::Absolute,
-                top: Val::Px(52.0),
-                right: Val::Px(10.0),
-                padding: UiRect::axes(Val::Px(8.0), Val::Px(5.0)),
-                border_radius: BorderRadius::all(Val::Px(4.0)),
-                ..default()
-            },
-            BackgroundColor(Color::srgba(0.15, 0.15, 0.2, 0.85)),
-            GlobalZIndex(100),
-            CreditsButton,
-        ))
-        .with_children(|parent| {
-            parent.spawn((
-                Text::new("CREDITS"),
-                TextFont {
-                    font_size: bevy::text::FontSize::Px(12.0),
-                    ..default()
-                },
-                TextColor(Color::srgb(0.8, 0.8, 0.85)),
-            ));
-        });
+fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
+    // Ambient music bed: a single looping track spawned once at startup (not
+    // tied to any AppState) so it plays continuously under the title,
+    // galaxy map, flight, and warp screens alike instead of restarting or
+    // cutting out on every transition. Sits well under the SFX volume, and
+    // rides the same `GlobalVolume` mute toggle as everything else below.
+    commands.spawn((
+        AudioPlayer(asset_server.load::<AudioSource>("sounds/music_bed.wav")),
+        PlaybackSettings::LOOP.with_volume(Volume::Linear(0.22)),
+    ));
 }
 
 fn toggle_mute(
-    interactions: Query<&Interaction, (Changed<Interaction>, With<MuteButton>)>,
+    mut requests: ResMut<HudRequests>,
     mut muted: ResMut<Muted>,
     mut global_volume: ResMut<GlobalVolume>,
-    mut bg_query: Query<&mut BackgroundColor, With<MuteButton>>,
-    mut label_query: Query<&mut Text, With<MuteButtonLabel>>,
+    mut hud_stats: ResMut<HudStats>,
 ) {
-    if !interactions.iter().any(|i| *i == Interaction::Pressed) {
+    if !std::mem::take(&mut requests.toggle_mute) {
         return;
     }
     muted.0 = !muted.0;
@@ -142,19 +83,13 @@ fn toggle_mute(
     } else {
         Volume::Linear(1.0)
     };
-    if let Ok(mut bg) = bg_query.single_mut() {
-        bg.0 = if muted.0 { BTN_OFF_COLOR } else { BTN_ON_COLOR };
-    }
-    if let Ok(mut text) = label_query.single_mut() {
-        **text = if muted.0 { "X".to_string() } else { ")))".to_string() };
-    }
+    // Field write, not a full struct replace: keeps whatever
+    // remaining/health/fuel/score `HudStats` already had.
+    hud_stats.muted = muted.0;
 }
 
-fn open_credits(
-    interactions: Query<&Interaction, (Changed<Interaction>, With<CreditsButton>)>,
-    mut credits_open: ResMut<CreditsOpen>,
-) {
-    if interactions.iter().any(|i| *i == Interaction::Pressed) {
+fn open_credits(mut requests: ResMut<HudRequests>, mut credits_open: ResMut<CreditsOpen>) {
+    if std::mem::take(&mut requests.open_credits) {
         credits_open.0 = true;
     }
 }

@@ -8,10 +8,12 @@ use std::f32::consts::TAU;
 
 use crate::galaxy_map::{GalaxyGrid, SectorKind};
 use crate::hud::credits_closed;
+use crate::hud_bridge::HudStats;
 use bevy::input::touch::Touches;
 
 use crate::mouse::{cursor_world_pos, screen_to_world_pos};
 use crate::state::{AppState, Campaign, DefeatReason, WarpTarget};
+use crate::virtual_input::{VirtualFirePending, VirtualNudge};
 
 // Depth runs from FAR_DEPTH (a speck near the vanishing point) down to 0.0
 // (right in front of the canopy). Screen position and sprite size are both
@@ -24,6 +26,10 @@ const MAX_SPREAD_Y: f32 = 250.0;
 const MIN_SIZE: f32 = 8.0;
 const MAX_SIZE: f32 = 90.0;
 const CROSSHAIR_SPEED: f32 = 320.0;
+
+/// Flat score award per enemy kill. Placeholder scoring: no combo/accuracy
+/// bonuses yet, just a tally.
+const SCORE_PER_KILL: u32 = 100;
 const HIT_MARGIN: f32 = 16.0;
 const SPAWN_INTERVAL: f32 = 1.1;
 const GUN_ORIGIN: Vec2 = Vec2::new(0.0, -300.0);
@@ -465,12 +471,6 @@ struct ExplosionParticle {
     velocity: Vec2,
 }
 
-#[derive(Component)]
-struct StatusText;
-
-#[derive(Component)]
-struct HealthText;
-
 #[derive(Resource, Default)]
 struct EnemiesRemaining(u32);
 
@@ -537,8 +537,7 @@ impl Plugin for FlightPlugin {
                     move_explosion_particles,
                     tick_fade_out,
                     check_abort,
-                    update_status_text,
-                    update_health_text,
+                    push_flight_hud_stats,
                 )
                     .chain()
                     .run_if(in_state(AppState::Flight).and_then(credits_closed)),
@@ -738,60 +737,20 @@ fn setup(
         ));
     }
 
-    commands.spawn((
-        Text::new(
-            "Zerlak sector: destroy all fighters (Arrows/mouse: aim+dodge, Space/click: fire, Esc: retreat)",
-        ),
-        TextFont {
-            font_size: bevy::text::FontSize::Px(16.0),
-            ..default()
-        },
-        TextColor(Color::srgb(0.8, 0.8, 0.8)),
-        Node {
-            position_type: PositionType::Absolute,
-            bottom: Val::Px(10.0),
-            left: Val::Px(10.0),
-            ..default()
-        },
-        FlightUi,
-    ));
-
-    commands.spawn((
-        Text::new(format!("Remaining: {}", difficulty.enemy_count)),
-        TextFont {
-            font_size: bevy::text::FontSize::Px(24.0),
-            ..default()
-        },
-        TextColor(Color::WHITE),
-        Node {
-            position_type: PositionType::Absolute,
-            top: Val::Px(10.0),
-            left: Val::Px(10.0),
-            ..default()
-        },
-        StatusText,
-        FlightUi,
-    ));
-
-    commands.spawn((
-        Text::new(format!("Health: {:.0}", campaign.health.max(0.0))),
-        TextFont {
-            font_size: bevy::text::FontSize::Px(24.0),
-            ..default()
-        },
-        TextColor(Color::srgb(1.0, 0.4, 0.4)),
-        Node {
-            position_type: PositionType::Absolute,
-            top: Val::Px(40.0),
-            left: Val::Px(10.0),
-            ..default()
-        },
-        HealthText,
-        FlightUi,
-    ));
+    // No on-canvas instructions or Remaining/Health text here anymore: both
+    // read from the fixed 900x650 game space, which the web frontend's
+    // cover-fit layout can crop on some aspect ratios (see App.css) -- the
+    // in-flight stat readout now lives in the React-rendered HUD overlay
+    // instead (pinned to the real screen corners via `hud_bridge.rs`), and
+    // the instructions only ever needed to be seen once, on the title
+    // screen, where they still are.
 }
 
-fn teardown(mut commands: Commands, query: Query<Entity, With<FlightUi>>) {
+fn teardown(
+    mut commands: Commands,
+    query: Query<Entity, With<FlightUi>>,
+    mut hud_stats: ResMut<HudStats>,
+) {
     for entity in &query {
         commands.entity(entity).despawn();
     }
@@ -803,6 +762,10 @@ fn teardown(mut commands: Commands, query: Query<Entity, With<FlightUi>>) {
     commands.remove_resource::<MonsterFeatures>();
     commands.remove_resource::<Difficulty>();
     commands.remove_resource::<SfxHandles>();
+    // Hide the HUD overlay's stat readout outside Flight, same as the old
+    // on-canvas Remaining/Health text being despawned along with FlightUi
+    // above.
+    hud_stats.visible = false;
 }
 
 fn spawn_enemies(
@@ -916,9 +879,17 @@ fn spawn_enemies(
         });
 }
 
+/// How far the crosshair moves per CSS pixel of drag on the on-screen
+/// wheel — a trackpad-style relative sensitivity, not the wheel's own
+/// radius, since dragging is a repeatable stroke (lift and drag again) same
+/// as a real trackpad, not a one-shot mapping of the whole wheel surface to
+/// the whole crosshair range.
+const VIRTUAL_NUDGE_SENSITIVITY: f32 = 1.5;
+
 fn move_crosshair(
     keys: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
+    virtual_nudge: Res<VirtualNudge>,
     mut crosshair: ResMut<CrosshairPos>,
     mut query: Query<&mut Transform, With<CrosshairMarker>>,
 ) {
@@ -935,6 +906,12 @@ fn move_crosshair(
     if keys.pressed(KeyCode::ArrowDown) {
         dir.y -= 1.0;
     }
+    // The on-screen wheel (web, tall-portrait layout only) works like a
+    // trackpad, not a joystick: it reports drag *movement*, already
+    // accumulated for this frame, added straight onto the crosshair
+    // position the same way a mouse delta would be — not a held direction
+    // scaled by time, and no recentering when the finger lifts.
+    crosshair.0 += virtual_nudge.0 * VIRTUAL_NUDGE_SENSITIVITY;
     crosshair.0 = (crosshair.0 + dir * CROSSHAIR_SPEED * time.delta_secs())
         .clamp(Vec2::new(-MAX_SPREAD_X, -MAX_SPREAD_Y), Vec2::new(MAX_SPREAD_X, MAX_SPREAD_Y));
 
@@ -1260,11 +1237,12 @@ fn shoot(
     keys: Res<ButtonInput<KeyCode>>,
     mouse: Res<ButtonInput<MouseButton>>,
     touches: Res<Touches>,
+    mut virtual_fire: ResMut<VirtualFirePending>,
     crosshair: Res<CrosshairPos>,
     mut remaining: ResMut<EnemiesRemaining>,
     enemies: Query<(Entity, &Transform), With<Enemy>>,
     mut grid: ResMut<GalaxyGrid>,
-    campaign: Res<Campaign>,
+    mut campaign: ResMut<Campaign>,
     mut next_state: ResMut<NextState<AppState>>,
     mut warp_target: ResMut<WarpTarget>,
     sfx: Res<SfxHandles>,
@@ -1273,10 +1251,17 @@ fn shoot(
     // or mouse-motion aiming (those read `pressed`/`CursorMoved` in their
     // own systems and never consume Space's or the mouse button's state) —
     // a tap does the same via `touches.any_just_pressed`, moving the
-    // crosshair in `touch_aim` and firing here in the same frame.
+    // crosshair in `touch_aim` and firing here in the same frame. The
+    // on-screen wheel's FIRE button reports through `VirtualFirePending`
+    // instead, set by a JS call with no matching Bevy input event of its
+    // own to key off; consume it unconditionally below so a stale press
+    // from a frame nothing else handled doesn't leak into the next one.
+    let fired = virtual_fire.0;
+    virtual_fire.0 = false;
     if !keys.just_pressed(KeyCode::Space)
         && !mouse.just_pressed(MouseButton::Left)
         && !touches.any_just_pressed()
+        && !fired
     {
         return;
     }
@@ -1294,6 +1279,7 @@ fn shoot(
 
     let target = if let Some((entity, _, pos)) = best {
         commands.entity(entity).despawn();
+        campaign.score += SCORE_PER_KILL;
         if remaining.0 > 0 {
             remaining.0 -= 1;
         }
@@ -1389,20 +1375,26 @@ fn check_abort(keys: Res<ButtonInput<KeyCode>>, mut next_state: ResMut<NextState
     }
 }
 
-fn update_status_text(remaining: Res<EnemiesRemaining>, mut query: Query<&mut Text, With<StatusText>>) {
-    if !remaining.is_changed() {
-        return;
-    }
-    if let Ok(mut text) = query.single_mut() {
-        **text = format!("Remaining: {}", remaining.0);
-    }
-}
-
-fn update_health_text(campaign: Res<Campaign>, mut query: Query<&mut Text, With<HealthText>>) {
-    if !campaign.is_changed() {
-        return;
-    }
-    if let Ok(mut text) = query.single_mut() {
-        **text = format!("Health: {:.0}", campaign.health.max(0.0));
+/// Keeps the React-rendered HUD overlay's stat readout in sync with the
+/// live game state (see `hud_bridge.rs`) — replaces what used to be
+/// on-canvas Remaining/Health text, which the web frontend's cover-fit
+/// layout could crop off-screen depending on the window's aspect ratio.
+fn push_flight_hud_stats(
+    remaining: Res<EnemiesRemaining>,
+    campaign: Res<Campaign>,
+    mut hud_stats: ResMut<HudStats>,
+) {
+    let next = HudStats {
+        visible: true,
+        remaining: remaining.0,
+        health: campaign.health.max(0.0),
+        fuel: campaign.fuel.max(0.0),
+        score: campaign.score,
+        // Not this system's concern — carried through as-is so it doesn't
+        // clobber whatever `hud.rs`'s toggle_mute last set.
+        muted: hud_stats.muted,
+    };
+    if *hud_stats != next {
+        *hud_stats = next;
     }
 }
