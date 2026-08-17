@@ -18,6 +18,11 @@ window.__zerlakNudge ??= () => {}
 window.__zerlakTriggerFire ??= () => {}
 window.__zerlakToggleMute ??= () => {}
 window.__zerlakRequestCreditsOpen ??= () => {}
+window.__zerlakRestartGame ??= () => {}
+// Called by unlock-audio.js, not from a React component — but the same
+// "no-op until the wasm module is up" placeholder reasoning applies: it
+// can fire (a real user gesture) before the module's finished loading.
+window.__zerlakNotifyAudioUnlocked ??= () => {}
 
 // HUD stat push channel: Rust calls this directly (the opposite direction
 // from the wheel/mute/credits calls above) once per changed frame with the
@@ -61,6 +66,9 @@ export default function App() {
           window.__zerlakToggleMute = mod.toggle_mute ?? window.__zerlakToggleMute
           window.__zerlakRequestCreditsOpen =
             mod.request_credits_open ?? window.__zerlakRequestCreditsOpen
+          window.__zerlakRestartGame = mod.restart_game ?? window.__zerlakRestartGame
+          window.__zerlakNotifyAudioUnlocked =
+            mod.notify_audio_unlocked ?? window.__zerlakNotifyAudioUnlocked
         }),
       )
       .then(() => setStatus('ready'))
@@ -280,6 +288,13 @@ function ScreenTextOverlay() {
         <div className="gameover-heading">MISSION FAILED</div>
         <div className="gameover-reason">{text.defeatReason}</div>
         <div className="gameover-level">Reached level {text.level}</div>
+        <button
+          type="button"
+          className="gameover-restart-btn"
+          onClick={() => window.__zerlakRestartGame()}
+        >
+          PLAY AGAIN
+        </button>
         <div className="gameover-prompt">Enter / Click / Tap: return to title</div>
       </div>
     )
@@ -290,26 +305,47 @@ function ScreenTextOverlay() {
 
 // The entire lower-third strip (tall-portrait layout only) is one
 // trackpad, not just the drawn wheel graphic inside it — trackpad-style,
-// not a joystick: dragging moves the crosshair by the drag's own motion,
-// the same way dragging a mouse or a laptop trackpad moves a cursor, not
-// by snapping to a held direction from center. Lift and drag again to
-// keep going, exactly like a trackpad stroke. Every tap anywhere in the
-// strip fires (once per touch-down), same as tapping the playfield
-// directly does outside this layout — the whole area exists so aiming and
-// firing don't fight over the same point under your finger, not to gate
-// firing behind a specific sub-region. The drawn wheel (styled after the
-// old iPod click wheel) is purely decorative, indicating "drag here" —
-// `pointer-events: none`, it never intercepts anything itself.
+// not a joystick: dragging moves the crosshair (Flight) or steps sector
+// selection (Galaxy Map) by the drag's own motion, the same way dragging a
+// mouse or a laptop trackpad moves a cursor, not by snapping to a held
+// direction from center. Lift and drag again to keep going, exactly like a
+// trackpad stroke. Every tap anywhere in the strip fires/selects (once per
+// touch-down), same as tapping the playfield directly does outside this
+// layout — the whole area exists so aiming and firing don't fight over the
+// same point under your finger, not to gate input behind a specific
+// sub-region. The drawn wheel (styled after the old iPod click wheel) is
+// purely decorative, indicating "drag here" — `pointer-events: none`, it
+// never intercepts anything itself.
+//
+// Only actually live during Galaxy Map and Flight — on the title screen
+// there's nothing here to aim or fire at, so the panel stays lowered and
+// non-interactive (taps pass through to the canvas underneath, same as
+// tapping anywhere else to launch), rising into place once there's a
+// sector to pick or a fight to aim at.
 function TouchPad() {
   const lastPos = useRef(null)
+  const [screenText, setScreenText] = useState({ screen: '' })
+  const [hudStats, setHudStats] = useState({ visible: false })
+
+  useEffect(() => {
+    screenTextListeners.add(setScreenText)
+    hudListeners.add(setHudStats)
+    return () => {
+      screenTextListeners.delete(setScreenText)
+      hudListeners.delete(setHudStats)
+    }
+  }, [])
+
+  const active = screenText.screen === 'galaxy_map' || hudStats.visible
 
   const onPointerDown = (e) => {
+    if (!active) return
     e.currentTarget.setPointerCapture(e.pointerId)
     lastPos.current = { x: e.clientX, y: e.clientY }
     window.__zerlakTriggerFire()
   }
   const onPointerMove = (e) => {
-    if (!lastPos.current) return
+    if (!active || !lastPos.current) return
     const dx = e.clientX - lastPos.current.x
     const dy = e.clientY - lastPos.current.y
     lastPos.current = { x: e.clientX, y: e.clientY }
@@ -322,7 +358,7 @@ function TouchPad() {
 
   return (
     <div
-      className="control-cluster"
+      className={active ? 'control-cluster control-cluster-active' : 'control-cluster'}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerEnd}

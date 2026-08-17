@@ -1,8 +1,9 @@
 use bevy::input::touch::Touches;
 use bevy::prelude::*;
 
+use crate::galaxy_map::GalaxyGrid;
 use crate::hud::credits_closed;
-use crate::hud_bridge::{ScreenKind, ScreenText};
+use crate::hud_bridge::{HudRequests, ScreenKind, ScreenText};
 use crate::state::{AppState, Campaign, DefeatReason};
 
 pub struct GameOverPlugin;
@@ -12,7 +13,8 @@ impl Plugin for GameOverPlugin {
         app.add_systems(OnEnter(AppState::GameOver), enter)
             .add_systems(
                 Update,
-                continue_input.run_if(in_state(AppState::GameOver).and_then(credits_closed)),
+                (continue_input, restart_input)
+                    .run_if(in_state(AppState::GameOver).and_then(credits_closed)),
             );
     }
 }
@@ -47,4 +49,20 @@ fn continue_input(
     {
         next_state.set(AppState::Title);
     }
+}
+
+/// React's "PLAY AGAIN" button — starts a brand new run directly, same
+/// setup as the title screen's own launch (`title.rs::start_input`), just
+/// skipping back through the title screen itself.
+fn restart_input(
+    mut requests: ResMut<HudRequests>,
+    mut commands: Commands,
+    mut next_state: ResMut<NextState<AppState>>,
+) {
+    if !std::mem::take(&mut requests.restart_game) {
+        return;
+    }
+    commands.insert_resource(Campaign::default());
+    commands.insert_resource(GalaxyGrid::generate(1));
+    next_state.set(AppState::GalaxyMap);
 }

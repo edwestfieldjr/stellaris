@@ -28,6 +28,21 @@ for (const name of ['AudioContext', 'webkitAudioContext']) {
   })
 }
 
+// Tells Rust (see hud_bridge.rs) to despawn and respawn the music track once
+// there's been a real, *confirmed* unlock — its sink was created at app
+// startup against a context that was still suspended, and on iOS resuming
+// that same context object later doesn't reliably un-stick it. Fires only
+// once, and only after a resume() call actually resolves (not just on any
+// gesture), so the fresh sink is built against a context that's truly
+// running by then, the same way a freshly spawned SFX sound already is
+// every time it plays.
+let notified = false
+function notifyUnlocked() {
+  if (notified) return
+  notified = true
+  window.__zerlakNotifyAudioUnlocked?.()
+}
+
 function unlockAudio() {
   for (const ctx of audioContexts) {
     // Not just 'suspended': iOS Safari/Chrome also has an 'interrupted'
@@ -37,7 +52,9 @@ function unlockAudio() {
     // leaving resume() never even attempted. Try on anything that isn't
     // already the one state that means "actually playing".
     if (ctx.state !== 'running') {
-      ctx.resume().catch(() => {})
+      ctx.resume().then(notifyUnlocked).catch(() => {})
+    } else {
+      notifyUnlocked()
     }
   }
 }

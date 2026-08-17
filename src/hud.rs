@@ -55,6 +55,7 @@ impl Plugin for PersistentUiPlugin {
                     close_credits,
                     sync_credits_panel,
                     pause_while_credits_open,
+                    respawn_music_on_unlock,
                 )
                     .chain(),
             );
@@ -114,6 +115,41 @@ fn toggle_mute(
     // Field write, not a full struct replace: keeps whatever
     // remaining/health/fuel/score `HudStats` already had.
     hud_stats.muted = muted.0;
+}
+
+/// The music track is spawned once at app startup, well before the player
+/// has interacted with the page at all — its sink gets created against an
+/// AudioContext that's still suspended (see the comment in `setup`). On
+/// most browsers, later resuming that same context object is enough to
+/// un-stick it, but iOS Safari/Chrome doesn't reliably honor that: a sink
+/// created against a context that wasn't already running at creation time
+/// can just stay silent even once the context itself reports `running`.
+/// Despawning and respawning the track fresh, once there's finally been a
+/// real gesture (`web/src/unlock-audio.js` calls through on the first
+/// successful resume), creates a brand new sink against a context that's
+/// actually running by the time it's built — the same path a freshly
+/// spawned SFX sound already takes every time it plays, which is why SFX
+/// never had this problem to begin with.
+fn respawn_music_on_unlock(
+    mut requests: ResMut<HudRequests>,
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    muted: Res<Muted>,
+    existing: Query<Entity, With<MusicTrack>>,
+) {
+    if !std::mem::take(&mut requests.audio_unlocked) {
+        return;
+    }
+    for entity in &existing {
+        commands.entity(entity).despawn();
+    }
+    let mut settings = PlaybackSettings::LOOP.with_volume(Volume::Linear(MUSIC_VOLUME));
+    settings.muted = muted.0;
+    commands.spawn((
+        AudioPlayer(asset_server.load::<AudioSource>("sounds/music_bed.wav")),
+        settings,
+        MusicTrack,
+    ));
 }
 
 fn open_credits(mut requests: ResMut<HudRequests>, mut credits_open: ResMut<CreditsOpen>) {

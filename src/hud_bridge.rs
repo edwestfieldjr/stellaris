@@ -37,6 +37,17 @@ pub struct HudStats {
 pub struct HudRequests {
     pub toggle_mute: bool,
     pub open_credits: bool,
+    /// Game Over's "PLAY AGAIN" button — handled in `game_over.rs`.
+    pub restart_game: bool,
+    /// Set once, the first time the page's audio-unlock shim (see
+    /// `web/src/unlock-audio.js`) successfully resumes an AudioContext from
+    /// a real user gesture. Handled in `hud.rs`: the music track starts
+    /// playing at app startup, before any gesture exists, so its sink gets
+    /// created against a context that's still suspended — resuming that
+    /// same context object later doesn't reliably un-stick playback on
+    /// iOS, so the music entity is despawned and respawned fresh once
+    /// there's finally a real gesture to create it against.
+    pub audio_unlocked: bool,
 }
 
 /// Which non-Flight screen (if any) the React overlay should render text
@@ -102,12 +113,18 @@ impl Plugin for HudBridgePlugin {
 }
 
 fn poll_hud_requests(mut requests: ResMut<HudRequests>) {
-    let (toggle_mute, open_credits) = bridge::poll();
+    let (toggle_mute, open_credits, restart_game, audio_unlocked) = bridge::poll();
     if toggle_mute {
         requests.toggle_mute = true;
     }
     if open_credits {
         requests.open_credits = true;
+    }
+    if restart_game {
+        requests.restart_game = true;
+    }
+    if audio_unlocked {
+        requests.audio_unlocked = true;
     }
 }
 
@@ -142,6 +159,8 @@ mod bridge {
     struct State {
         toggle_mute: bool,
         open_credits: bool,
+        restart_game: bool,
+        audio_unlocked: bool,
     }
 
     fn state() -> &'static Mutex<State> {
@@ -165,9 +184,27 @@ mod bridge {
         state().lock().unwrap().open_credits = true;
     }
 
-    pub(super) fn poll() -> (bool, bool) {
+    /// Called from JS when Game Over's "PLAY AGAIN" button is pressed.
+    #[wasm_bindgen]
+    pub fn restart_game() {
+        state().lock().unwrap().restart_game = true;
+    }
+
+    /// Called from JS (see `web/src/unlock-audio.js`) the first time a
+    /// real user gesture successfully resumes an AudioContext.
+    #[wasm_bindgen]
+    pub fn notify_audio_unlocked() {
+        state().lock().unwrap().audio_unlocked = true;
+    }
+
+    pub(super) fn poll() -> (bool, bool, bool, bool) {
         let mut s = state().lock().unwrap();
-        (std::mem::take(&mut s.toggle_mute), std::mem::take(&mut s.open_credits))
+        (
+            std::mem::take(&mut s.toggle_mute),
+            std::mem::take(&mut s.open_credits),
+            std::mem::take(&mut s.restart_game),
+            std::mem::take(&mut s.audio_unlocked),
+        )
     }
 
     #[wasm_bindgen]
@@ -214,8 +251,8 @@ mod bridge {
 
 #[cfg(not(target_arch = "wasm32"))]
 mod bridge {
-    pub(super) fn poll() -> (bool, bool) {
-        (false, false)
+    pub(super) fn poll() -> (bool, bool, bool, bool) {
+        (false, false, false, false)
     }
 
     pub(super) fn push(
