@@ -41,6 +41,13 @@ const STAR_MIN_SPEED: f32 = 220.0;
 const STAR_MAX_SPEED: f32 = 480.0;
 const STAR_MIN_REACH: f32 = 0.4;
 const STAR_MAX_REACH: f32 = 1.6;
+// Fraction of the approach (in `t`, which position also scales roughly
+// linearly with) treated as a "black hole" dead zone around the vanishing
+// point: streaks fade in across it instead of blinking in already at
+// visible alpha, so they read as emerging from the center rather than
+// zapping into existence out of nowhere. ~5-10% of the play field's
+// radius from center.
+const STAR_FADE_IN_T: f32 = 0.08;
 const STAR_MAX_LEN: f32 = 55.0;
 
 // The deep layer: dim, distant points sitting behind the warp streaks. It
@@ -153,7 +160,13 @@ fn star_visual(dir: Vec2, reach: f32, depth: f32) -> (Vec2, f32, f32) {
     let t = (1.0 - (depth / FAR_DEPTH)).clamp(0.0, 1.0);
     let pos = dir * reach * Vec2::new(MAX_SPREAD_X, MAX_SPREAD_Y) * t;
     let len = 2.0 + (STAR_MAX_LEN - 2.0) * t * t;
-    let alpha = 0.15 + 0.85 * t;
+    let base_alpha = 0.15 + 0.85 * t;
+    // Ramp up from fully transparent across the dead zone instead of
+    // applying `base_alpha` as-is, which would make a freshly (re)spawned
+    // streak already 15% visible the instant it appears at the vanishing
+    // point.
+    let fade_in = (t / STAR_FADE_IN_T).clamp(0.0, 1.0);
+    let alpha = base_alpha * fade_in;
     (pos, len, alpha)
 }
 
@@ -345,6 +358,9 @@ struct EnemyShapes {
     shard: Handle<Mesh>,
     spike: Handle<Mesh>,
     claw: Handle<Mesh>,
+    /// Shared by every enemy's outline child (see `spawn_enemies`) — one
+    /// plain white material, reused rather than allocated per-spawn.
+    outline_material: Handle<ColorMaterial>,
 }
 
 impl EnemyShapes {
@@ -577,6 +593,7 @@ fn setup(
         shard: meshes.add(EnemyKind::Shard.build_mesh()),
         spike: meshes.add(EnemyKind::Spike.build_mesh()),
         claw: meshes.add(EnemyKind::Claw.build_mesh()),
+        outline_material: materials.add(ColorMaterial::from(Color::WHITE)),
     });
     commands.insert_resource(MonsterFeatures {
         eye_socket: meshes.add(Circle::new(0.11).mesh()),
@@ -801,10 +818,13 @@ fn spawn_enemies(
 
     let kind = ENEMY_KINDS[rng.random_range(0..ENEMY_KINDS.len())];
     let (hue_min, hue_max) = kind.hue_range();
+    // Bright pastel/highlighter tones, not the muted mid-tones this used
+    // to pick — small phone screens need more contrast against the dark
+    // starfield than a desktop monitor does.
     let color = Color::hsl(
         rng.random_range(hue_min..hue_max),
-        rng.random_range(0.55..0.85),
-        rng.random_range(0.45..0.65),
+        rng.random_range(0.75..1.0),
+        rng.random_range(0.68..0.8),
     );
 
     commands
@@ -832,6 +852,17 @@ fn spawn_enemies(
             FlightUi,
         ))
         .with_children(|parent| {
+            // A thin white silhouette, same mesh slightly oversized, sat
+            // just behind the body (negative local z) — the classic 2D
+            // sprite-outline trick. Helps the whole monster read clearly
+            // against the starfield on small phone screens, same reasoning
+            // as the brighter body color above.
+            parent.spawn((
+                Mesh2d(shapes.handle(kind)),
+                MeshMaterial2d(shapes.outline_material.clone()),
+                Transform::from_xyz(0.0, 0.0, -1.0).with_scale(Vec3::splat(1.08)),
+            ));
+
             // Mean, glowing eyes with angry inward-angled brows — the same
             // trim on every silhouette so it always reads as a living
             // monster rather than a bare shape.

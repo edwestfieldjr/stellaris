@@ -217,15 +217,18 @@ body {
 
 /* An old iPod click wheel, purely decorative — `.control-cluster` (the
    entire strip, not just this circle) is what actually handles drag/tap.
-   Lowered and invisible by default, rising into place (see the comment on
-   `.control-cluster` above) only once there's actually something to aim
-   at or select. */
+   Always visible/in place at a fixed position (it doesn't rise or lower
+   with game state — only `.control-cluster`'s `pointer-events` toggles
+   whether it's actually live). White-outlined, along with the center
+   circle and the directional wedges below, so the whole cluster stays
+   readable against the starfield on a small phone screen. */
 .ipod-wheel {
   position: relative;
   width: min(58vw, 32vh, 260px);
   aspect-ratio: 1;
   border-radius: 50%;
   background: radial-gradient(circle at 35% 30%, #2a2c30, #0a0a0b 70%);
+  border: 2px solid rgba(255, 255, 255, 0.6);
   box-shadow:
     inset 0 0 18px rgba(0, 0, 0, 0.8),
     inset 0 2px 4px rgba(255, 255, 255, 0.06),
@@ -234,16 +237,6 @@ body {
   align-items: center;
   justify-content: center;
   pointer-events: none;
-  transform: translateY(130%);
-  opacity: 0;
-  transition:
-    transform 0.5s ease,
-    opacity 0.4s ease;
-}
-
-.control-cluster-active .ipod-wheel {
-  transform: translateY(0);
-  opacity: 1;
 }
 
 .ipod-fire {
@@ -251,6 +244,7 @@ body {
   height: 42%;
   border-radius: 50%;
   background: radial-gradient(circle at 35% 30%, #3a3d42, #16171a 75%);
+  border: 2px solid rgba(255, 255, 255, 0.6);
   box-shadow:
     inset 0 0 10px rgba(0, 0, 0, 0.7),
     inset 0 1px 3px rgba(255, 255, 255, 0.08),
@@ -262,13 +256,16 @@ body {
    scheme indicator (dragging isn't actually constrained to these four
    directions). Plain CSS triangles (border trick), not text/icon glyphs,
    consistent with how the rest of the game's UI avoids relying on font
-   glyph coverage for icons. */
+   glyph coverage for icons. A border-trick triangle has no edge to put an
+   actual `border` on, so the "outline" is a pair of drop-shadows offset
+   in two directions instead, plus enough opacity to read clearly. */
 .ipod-wheel-arrow {
   position: absolute;
   width: 0;
   height: 0;
   pointer-events: none;
-  opacity: 0.3;
+  opacity: 0.85;
+  filter: drop-shadow(0 0 1px #fff) drop-shadow(0 0 1.5px rgba(255, 255, 255, 0.8));
 }
 
 .ipod-wheel-arrow-up,
