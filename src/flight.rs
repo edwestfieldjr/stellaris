@@ -358,9 +358,6 @@ struct EnemyShapes {
     shard: Handle<Mesh>,
     spike: Handle<Mesh>,
     claw: Handle<Mesh>,
-    /// Shared by every enemy's outline child (see `spawn_enemies`) — one
-    /// plain white material, reused rather than allocated per-spawn.
-    outline_material: Handle<ColorMaterial>,
 }
 
 impl EnemyShapes {
@@ -406,6 +403,12 @@ struct MonsterFeatures {
     pupil_material: Handle<ColorMaterial>,
     fang_material: Handle<ColorMaterial>,
     tentacle_material: Handle<ColorMaterial>,
+    /// Shared by every tentacle's outline copy (see `spawn_enemies`) — a
+    /// neutral 50% gray with a 5% blue tint, not hue-matched to the body
+    /// like the main silhouette outline: the tentacles are already their
+    /// own fixed dark color regardless of body hue, so their outline stays
+    /// fixed too.
+    tentacle_outline_material: Handle<ColorMaterial>,
 }
 
 #[derive(Component)]
@@ -593,7 +596,6 @@ fn setup(
         shard: meshes.add(EnemyKind::Shard.build_mesh()),
         spike: meshes.add(EnemyKind::Spike.build_mesh()),
         claw: meshes.add(EnemyKind::Claw.build_mesh()),
-        outline_material: materials.add(ColorMaterial::from(Color::WHITE)),
     });
     commands.insert_resource(MonsterFeatures {
         eye_socket: meshes.add(Circle::new(0.11).mesh()),
@@ -621,6 +623,9 @@ fn setup(
         pupil_material: materials.add(ColorMaterial::from(Color::srgb(1.0, 0.15, 0.08))),
         fang_material: materials.add(ColorMaterial::from(Color::srgb(0.95, 0.95, 0.88))),
         tentacle_material: materials.add(ColorMaterial::from(Color::srgb(0.12, 0.05, 0.08))),
+        // 50% gray, 5% blue tint: hue barely matters at 5% saturation, so
+        // any blue-ish hue works — 220 is a plain, unsaturated blue.
+        tentacle_outline_material: materials.add(ColorMaterial::from(Color::hsl(220.0, 0.05, 0.5))),
     });
 
     let mut rng = rand::rng();
@@ -821,11 +826,14 @@ fn spawn_enemies(
     // Bright pastel/highlighter tones, not the muted mid-tones this used
     // to pick — small phone screens need more contrast against the dark
     // starfield than a desktop monitor does.
-    let color = Color::hsl(
-        rng.random_range(hue_min..hue_max),
-        rng.random_range(0.75..1.0),
-        rng.random_range(0.68..0.8),
-    );
+    let hue = rng.random_range(hue_min..hue_max);
+    let saturation = rng.random_range(0.75..1.0);
+    let lightness = rng.random_range(0.68..0.8);
+    let color = Color::hsl(hue, saturation, lightness);
+    // Outline: same hue/saturation as the body, not a flat white — reads
+    // as "this monster's own silhouette, lit slightly differently" rather
+    // than a generic highlight ring around every enemy regardless of kind.
+    let outline_color = Color::hsl(hue, saturation, lightness.clamp(0.66, 0.75));
 
     commands
         .spawn((
@@ -852,14 +860,15 @@ fn spawn_enemies(
             FlightUi,
         ))
         .with_children(|parent| {
-            // A thin white silhouette, same mesh slightly oversized, sat
-            // just behind the body (negative local z) — the classic 2D
-            // sprite-outline trick. Helps the whole monster read clearly
-            // against the starfield on small phone screens, same reasoning
-            // as the brighter body color above.
+            // A thin silhouette in the body's own hue/saturation (just a
+            // touch lighter or darker — see `outline_color` above), same
+            // mesh slightly oversized, sat just behind the body (negative
+            // local z) — the classic 2D sprite-outline trick. Helps the
+            // whole monster read clearly against the starfield on small
+            // phone screens, same reasoning as the brighter body color.
             parent.spawn((
                 Mesh2d(shapes.handle(kind)),
-                MeshMaterial2d(shapes.outline_material.clone()),
+                MeshMaterial2d(materials.add(ColorMaterial::from(outline_color))),
                 Transform::from_xyz(0.0, 0.0, -1.0).with_scale(Vec3::splat(1.08)),
             ));
 
@@ -895,12 +904,20 @@ fn spawn_enemies(
                 ));
             }
 
-            // A fan of curling tentacles hanging beneath the body.
+            // A fan of curling tentacles hanging beneath the body, each
+            // with its own thin gray-blue outline (same oversized-copy
+            // trick as the body's, just further back so it clears the
+            // body outline too).
             for (mesh, x, s) in [
                 (monster.tentacle_l.clone(), -0.22, 0.55),
                 (monster.tentacle_c.clone(), 0.0, 0.62),
                 (monster.tentacle_r.clone(), 0.22, 0.55),
             ] {
+                parent.spawn((
+                    Mesh2d(mesh.clone()),
+                    MeshMaterial2d(monster.tentacle_outline_material.clone()),
+                    Transform::from_xyz(x, -0.26, -0.02).with_scale(Vec3::splat(s * 1.1)),
+                ));
                 parent.spawn((
                     Mesh2d(mesh),
                     MeshMaterial2d(monster.tentacle_material.clone()),
